@@ -24,3 +24,68 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Custom animations for live indicators */
+@keyframes live-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.1);
+  }
+}
+
+.live-pulse {
+  animation: live-pulse 2s ease-in-out infinite;
+}
+
+@keyframes border-pulse {
+  0%, 100% {
+    border-color: rgb(252 165 165);
+    box-shadow: 0 0 0 2px rgba(254, 202, 202, 0.5);
+  }
+  50% {
+    border-color: rgb(239 68 68);
+    box-shadow: 0 0 0 4px rgba(254, 202, 202, 0.8);
+  }
+}
+
+.border-pulse {
+  animation: border-pulse 2s ease-in-out infinite;
+}
+
+@keyframes moveRight {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(400%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+/* Gradient overlay for matches section */
+.matches-gradient {
+  background: linear-gradient(to top, #ffffff 0%, transparent 100%);
+}
+
+@media (prefers-color-scheme: dark) {
+  .matches-gradient {
+    background: linear-gradient(to top, #0a0a0a 0%, transparent 100%);
+  }
+}
+
+/* Force gradient colors with higher specificity */
+.matches-gradient-force {
+  background: linear-gradient(to top, #ffffff 0%, transparent 100%) !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .matches-gradient-force {
+    background: linear-gradient(to top, #0a0a0a 0%, transparent 100%) !important;
+  }
+}

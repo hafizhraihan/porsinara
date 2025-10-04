@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Save, Plus, Edit, Trash2, Trophy, Users, TreePine, RotateCcw, RefreshCw } from 'lucide-react';
 import { FACULTIES, COMPETITIONS } from '@/types';
 import { getFacultyColorClasses, getCompetitionIcon } from '@/lib/utils';
+import { useToast } from '@/components/ToastContainer';
 import { 
   getMatches, 
   getCompetitions, 
@@ -40,6 +41,8 @@ export default function AdminPanel() {
   const [competitions, setCompetitions] = useState<any[]>([]);
   const [faculties, setFaculties] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncingMedals, setSyncingMedals] = useState(false);
+  const { addToast } = useToast();
 
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -432,28 +435,56 @@ export default function AdminPanel() {
           <div className="flex space-x-3">
             <button
               onClick={async () => {
+                setSyncingMedals(true);
                 try {
                   await syncMedalTally();
-                  alert('Medal tally has been synced successfully! All completed matches have been processed.');
+                  addToast({
+                    type: 'success',
+                    title: 'Medal Tally Synced',
+                    message: 'All completed matches have been processed successfully!',
+                    duration: 4000
+                  });
                 } catch (error) {
                   console.error('Error syncing medal tally:', error);
-                  alert('Error syncing medal tally. Check console for details.');
+                  addToast({
+                    type: 'error',
+                    title: 'Sync Failed',
+                    message: 'Error syncing medal tally. Check console for details.',
+                    duration: 6000
+                  });
+                } finally {
+                  setSyncingMedals(false);
                 }
               }}
-              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
+              disabled={syncingMedals}
+              className={`px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors ${
+                syncingMedals 
+                  ? 'bg-green-500 text-white cursor-not-allowed opacity-75' 
+                  : 'bg-green-600 text-white hover:bg-green-700'
+              }`}
             >
-              <RefreshCw className="w-4 h-4" />
-              <span>Sync Medals</span>
+              <RefreshCw className={`w-4 h-4 ${syncingMedals ? 'animate-spin' : ''}`} />
+              <span>{syncingMedals ? 'Syncing...' : 'Sync Medals'}</span>
             </button>
             <button
               onClick={async () => {
                 if (confirm('Are you sure you want to reset all medal tally data? This action cannot be undone.')) {
                   try {
                     await resetMedalTally();
-                    alert('Medal tally has been reset successfully!');
+                    addToast({
+                      type: 'success',
+                      title: 'Medal Tally Reset',
+                      message: 'All medal tallies have been reset successfully!',
+                      duration: 4000
+                    });
                   } catch (error) {
                     console.error('Error resetting medal tally:', error);
-                    alert('Error resetting medal tally. Check console for details.');
+                    addToast({
+                      type: 'error',
+                      title: 'Reset Failed',
+                      message: 'Error resetting medal tally. Check console for details.',
+                      duration: 6000
+                    });
                   }
                 }
               }}
@@ -814,6 +845,12 @@ export default function AdminPanel() {
                 }));
                 setMatches(transformedMatches);
                 setEditingMatch(null);
+                addToast({
+                  type: 'success',
+                  title: 'Match Updated',
+                  message: 'Arts competition scores have been saved successfully!',
+                  duration: 4000
+                });
               } else {
                 // Handle regular match saving
                 handleSaveMatch({
@@ -840,7 +877,12 @@ export default function AdminPanel() {
               }
               } catch (error) {
                 console.error('Error saving match:', error);
-                alert('Error saving match. Check console for details.');
+                addToast({
+                  type: 'error',
+                  title: 'Save Failed',
+                  message: 'Error saving match. Check console for details.',
+                  duration: 6000
+                });
               }
             }}>
               <div className="space-y-4">

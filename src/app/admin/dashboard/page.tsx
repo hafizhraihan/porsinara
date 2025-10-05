@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, Plus, Edit, Trash2, Trophy, Users, RotateCcw, RefreshCw, Shield } from 'lucide-react';
+import { Save, Plus, Edit, Trash2, Trophy, Users, RotateCcw, RefreshCw, Shield, Download, ChevronDown } from 'lucide-react';
 import { getFacultyColorClasses, getCompetitionIcon } from '@/lib/utils';
 import { useToast } from '@/components/ToastContainer';
 import { 
@@ -71,6 +71,150 @@ export default function AdminPanel() {
   const [artsCompetitionScores, setArtsCompetitionScores] = useState<{[facultyId: string]: number}>({});
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [sortBy, setSortBy] = useState<'date' | 'competition'>('date');
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
+
+  // Export functions
+  const exportToJSON = () => {
+    const exportData = {
+      matches: matches,
+      competitions: competitions,
+      faculties: faculties,
+      exportDate: new Date().toISOString(),
+      exportedBy: adminUser?.username || 'Unknown'
+    };
+    
+    const dataStr = JSON.stringify(exportData, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `porsinara-data-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    addToast({
+      type: 'success',
+      title: 'Export Successful',
+      message: 'Data exported to JSON successfully!',
+      duration: 4000
+    });
+  };
+
+  const exportToCSV = () => {
+    // Export matches data
+    const matchesCSV = [
+      ['ID', 'Competition', 'Faculty 1', 'Faculty 2', 'Score 1', 'Score 2', 'Status', 'Date', 'Time', 'Location', 'Round'],
+      ...matches.map(match => [
+        match.id,
+        competitions.find(c => c.id === match.competitionId)?.name || 'Unknown',
+        faculties.find(f => f.id === match.faculty1Id)?.name || 'Unknown',
+        faculties.find(f => f.id === match.faculty2Id)?.name || 'Unknown',
+        match.faculty1Score || '',
+        match.faculty2Score || '',
+        match.status,
+        match.date,
+        match.time,
+        match.location,
+        match.round || ''
+      ])
+    ].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+
+    const dataBlob = new Blob([matchesCSV], { type: 'text/csv' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `porsinara-matches-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    addToast({
+      type: 'success',
+      title: 'Export Successful',
+      message: 'Matches data exported to CSV successfully!',
+      duration: 4000
+    });
+  };
+
+  const exportToExcel = async () => {
+    try {
+      // For Excel export, we'll create a simple HTML table that can be opened in Excel
+      const excelData = `
+        <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+        <head>
+          <meta charset="utf-8">
+          <meta name="ProgId" content="Excel.Sheet">
+          <meta name="Generator" content="Microsoft Excel 11">
+          <title>PORSINARA Data Export</title>
+        </head>
+        <body>
+          <table>
+            <tr><th colspan="11">PORSINARA Matches Data Export</th></tr>
+            <tr><th colspan="11">Exported on: ${new Date().toLocaleString()}</th></tr>
+            <tr><th colspan="11">Exported by: ${adminUser?.username || 'Unknown'}</th></tr>
+            <tr></tr>
+            <tr>
+              <th>ID</th>
+              <th>Competition</th>
+              <th>Faculty 1</th>
+              <th>Faculty 2</th>
+              <th>Score 1</th>
+              <th>Score 2</th>
+              <th>Status</th>
+              <th>Date</th>
+              <th>Time</th>
+              <th>Location</th>
+              <th>Round</th>
+            </tr>
+            ${matches.map(match => `
+              <tr>
+                <td>${match.id}</td>
+                <td>${competitions.find(c => c.id === match.competitionId)?.name || 'Unknown'}</td>
+                <td>${faculties.find(f => f.id === match.faculty1Id)?.name || 'Unknown'}</td>
+                <td>${faculties.find(f => f.id === match.faculty2Id)?.name || 'Unknown'}</td>
+                <td>${match.faculty1Score || ''}</td>
+                <td>${match.faculty2Score || ''}</td>
+                <td>${match.status}</td>
+                <td>${match.date}</td>
+                <td>${match.time}</td>
+                <td>${match.location}</td>
+                <td>${match.round || ''}</td>
+              </tr>
+            `).join('')}
+          </table>
+        </body>
+        </html>
+      `;
+
+      const dataBlob = new Blob([excelData], { type: 'application/vnd.ms-excel' });
+      const url = URL.createObjectURL(dataBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `porsinara-data-${new Date().toISOString().split('T')[0]}.xls`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      addToast({
+        type: 'success',
+        title: 'Export Successful',
+        message: 'Data exported to Excel successfully!',
+        duration: 4000
+      });
+    } catch (error) {
+      console.error('Error exporting to Excel:', error);
+      addToast({
+        type: 'error',
+        title: 'Export Failed',
+        message: 'Error exporting to Excel. Check console for details.',
+        duration: 6000
+      });
+    }
+  };
 
   // Load admin user data
   useEffect(() => {
@@ -115,6 +259,28 @@ export default function AdminPanel() {
       };
     }
   }, []);
+
+  // Close export dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showExportDropdown) {
+        const target = event.target as HTMLElement;
+        if (!target.closest('.export-dropdown-container')) {
+          setShowExportDropdown(false);
+        }
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        document.removeEventListener('mousedown', handleClickOutside);
+      }
+    };
+  }, [showExportDropdown]);
 
   // Permission functions based on role
   const canAddMatch = () => {
@@ -641,6 +807,55 @@ export default function AdminPanel() {
                 <RotateCcw className="w-4 h-4" />
                 <span>Reset Medals</span>
               </button>
+            )}
+            {adminUser?.role === 'SUP' && (
+              <div className="relative export-dropdown-container">
+                <button
+                  onClick={() => setShowExportDropdown(!showExportDropdown)}
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Export Data</span>
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+                
+                {showExportDropdown && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                    <div className="py-1">
+                      <button
+                        onClick={() => {
+                          exportToJSON();
+                          setShowExportDropdown(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                      >
+                        <span>📄</span>
+                        <span>Export as JSON</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          exportToCSV();
+                          setShowExportDropdown(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                      >
+                        <span>📊</span>
+                        <span>Export as CSV</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          exportToExcel();
+                          setShowExportDropdown(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                      >
+                        <span>📈</span>
+                        <span>Export as Excel</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
             {canAddMatch() && (
               <button

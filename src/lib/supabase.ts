@@ -11,19 +11,20 @@ const isBuildTime = typeof window === 'undefined' && process.env.NODE_ENV === 'p
 let supabase: SupabaseClient
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  if (isBuildTime) {
-    // During build time, create a mock client
-    supabase = createClient(
-      'https://placeholder.supabase.co',
-      'placeholder-key',
-      {
-        auth: { persistSession: false },
-        global: { fetch: () => Promise.resolve(new Response('{}')) }
+  // During build time or when env vars are missing, create a mock client
+  supabase = createClient(
+    'https://placeholder.supabase.co',
+    'placeholder-key',
+    {
+      auth: { persistSession: false },
+      global: { 
+        fetch: () => Promise.resolve(new Response('{}')),
+        headers: {
+          'X-Client-Info': 'porsinara-mock'
+        }
       }
-    )
-  } else {
-    throw new Error('Missing Supabase environment variables')
-  }
+    }
+  )
 } else {
   supabase = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {

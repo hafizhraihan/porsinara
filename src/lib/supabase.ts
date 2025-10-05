@@ -27,7 +27,14 @@ if (!supabaseUrl || !supabaseAnonKey) {
 } else {
   supabase = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
-      persistSession: !isBuildTime
+      persistSession: !isBuildTime,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
+    },
+    global: {
+      headers: {
+        'X-Client-Info': 'porsinara'
+      }
     }
   })
 }

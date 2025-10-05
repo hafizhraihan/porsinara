@@ -159,11 +159,6 @@ export default function Home() {
 
         // Transform matches data and sort by date
         console.log('Raw matches data at', new Date().toLocaleTimeString(), ':', matchesData);
-        console.log('Sample match faculty data:', matchesData[0]?.faculty1, matchesData[0]?.faculty2);
-        console.log('First match faculty1 name:', matchesData[0]?.faculty1?.name);
-        console.log('First match faculty1 short_name:', matchesData[0]?.faculty1?.short_name);
-        console.log('First match faculty2 name:', matchesData[0]?.faculty2?.name);
-        console.log('First match faculty2 short_name:', matchesData[0]?.faculty2?.short_name);
         const transformedMatches = matchesData
           .map((match: Record<string, any>) => ({
             id: match.id,

@@ -12,26 +12,6 @@ import {
   stopPolling
 } from '@/lib/supabase-queries';
 
-interface Faculty {
-  id: string;
-  name: string;
-  short_name: string;
-  color: string;
-}
-
-interface Standing {
-  faculty: {
-    id: string;
-    name: string;
-    shortName: string;
-    color: string;
-  };
-  totalPoints: number;
-  rank: number;
-  gold: number;
-  silver: number;
-  bronze: number;
-}
 
 interface ArtsScore {
   faculty_id: string;
@@ -477,7 +457,7 @@ export default function MatchesPage() {
                                 <div className="flex justify-center mb-3">
                                   <div className="flex items-center space-x-2 scale-110">
                                     <div className={`w-4 h-4 rounded-full ${getFacultyColorClasses(top3[0].faculty_id).split(' ')[0]}`}></div>
-                                     <span className="text-xs sm:text-base font-semibold text-gray-900">{top3[0].faculty?.short_name || 'Unknown'}</span>
+                                     <span className="text-xs sm:text-base font-semibold text-gray-900">{top3[0].faculty?.shortName || 'Unknown'}</span>
                                     <Trophy className="w-5 h-5 text-yellow-500" />
                                     <span className="text-xs sm:text-base font-bold text-gray-900">{top3[0].score}</span>
                                   </div>
@@ -487,7 +467,7 @@ export default function MatchesPage() {
                                   {top3.slice(1).map((score, index) => (
                                     <div key={score.faculty_id} className="flex items-center space-x-2">
                                       <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(score.faculty_id).split(' ')[0]}`}></div>
-                                       <span className="text-xs sm:text-sm font-medium text-gray-900">{score.faculty?.short_name || 'Unknown'}</span>
+                                       <span className="text-xs sm:text-sm font-medium text-gray-900">{score.faculty?.shortName || 'Unknown'}</span>
                                       {index === 0 && <Trophy className="w-4 h-4 text-gray-400" />}
                                       {index === 1 && <Trophy className="w-4 h-4 text-orange-600" />}
                                       <span className="text-xs sm:text-sm font-bold text-gray-900">{score.score}</span>

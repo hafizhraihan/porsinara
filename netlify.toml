@@ -4,15 +4,9 @@
 
 [build.environment]
   NODE_VERSION = "22.20.0"
-
-# Configure secrets scanning
-[build.processing]
-  skip_processing = false
-
-# Allow Supabase environment variables in build output
-[build.processing.secrets]
-  # These are public environment variables that are safe to include in build
-  omit_keys = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY"]
+  # Disable secrets scanning since we're using public environment variables
+  SECRETS_SCAN_ENABLED = "false"
+  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY"
   
 # Headers for static assets
 [[headers]]

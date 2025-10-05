@@ -2,14 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Settings, Activity } from 'lucide-react';
+import { Home } from 'lucide-react';
 
 export default function Navigation() {
   const pathname = usePathname();
 
   const navItems = [
     { href: '/', label: 'Dashboard', icon: Home },
-    { href: '/admin', label: 'Admin Panel', icon: Settings },
   ];
 
   return (
@@ -53,14 +52,6 @@ export default function Navigation() {
                 </Link>
               );
             })}
-            
-            <div className="flex items-center space-x-2 text-red-600" suppressHydrationWarning>
-              <div className="relative">
-                <Activity className="w-4 h-4 live-pulse" suppressHydrationWarning />
-                <div className="absolute inset-0 w-4 h-4 bg-red-500 rounded-full animate-ping opacity-20"></div>
-              </div>
-              <span className="text-sm font-medium live-pulse">LIVE</span>
-            </div>
           </div>
         </div>
       </div>

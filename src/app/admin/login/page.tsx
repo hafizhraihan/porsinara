@@ -91,8 +91,20 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="max-w-md w-full">
+    <div 
+      className="min-h-screen bg-cover bg-center bg-no-repeat flex items-center justify-center p-4 relative"
+      style={{
+        backgroundImage: "url('/binus.jpeg')"
+      }}
+    >
+      {/* Overlay with 0.8 opacity */}
+      <div 
+        className="absolute inset-0"
+        style={{
+          backgroundColor: 'rgba(188, 236, 255, 0.8)'
+        }}
+      ></div>
+      <div className="max-w-md w-full relative z-10">
         {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4">
@@ -194,15 +206,6 @@ export default function AdminLogin() {
             </div>
           </div>
 
-          {/* Demo Credentials */}
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-            <h3 className="text-sm font-medium text-gray-700 mb-2">Demo Credentials:</h3>
-            <div className="text-sm text-gray-600 space-y-1">
-              <p><strong>Super User:</strong> sdc1 / sdc567</p>
-              <p><strong>Basketball Supervisor:</strong> basketspv1 / basketspv567</p>
-              <p><strong>Basketball Staff:</strong> basket1 / basket567</p>
-            </div>
-          </div>
         </div>
 
         {/* Footer */}

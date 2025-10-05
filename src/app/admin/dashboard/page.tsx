@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, Plus, Edit, Trash2, Trophy, Users, RotateCcw, RefreshCw, Shield, Download, ChevronDown } from 'lucide-react';
+import { Save, Plus, Edit, Trash2, Trophy, Users, RotateCcw, RefreshCw, Shield, Download, ChevronDown, FileText } from 'lucide-react';
+import jsPDF from 'jspdf';
 import { getFacultyColorClasses, getCompetitionIcon } from '@/lib/utils';
 import { useToast } from '@/components/ToastContainer';
 import { 
@@ -214,6 +215,447 @@ export default function AdminPanel() {
         duration: 6000
       });
     }
+  };
+
+  const generatePDFModule = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let yPosition = 20;
+
+    // Helper function to add text with word wrapping
+    const addText = (text: string, fontSize: number = 12, isBold: boolean = false, color: string = '#000000') => {
+      doc.setFontSize(fontSize);
+      doc.setFont('helvetica', isBold ? 'bold' : 'normal');
+      doc.setTextColor(color);
+      
+      const lines = doc.splitTextToSize(text, pageWidth - 40);
+      doc.text(lines, 20, yPosition);
+      yPosition += lines.length * (fontSize * 0.4) + 5;
+      
+      // Check if we need a new page
+      if (yPosition > pageHeight - 20) {
+        doc.addPage();
+        yPosition = 20;
+      }
+    };
+
+    // Helper function to add a new page
+    const addNewPage = () => {
+      doc.addPage();
+      yPosition = 20;
+    };
+
+    // Cover Page
+    doc.setFillColor(0, 102, 204); // Blue background
+    doc.rect(0, 0, pageWidth, pageHeight, 'F');
+    
+    doc.setTextColor(255, 255, 255); // White text
+    doc.setFontSize(24);
+    doc.setFont('helvetica', 'bold');
+    doc.text('PANDUAN ADMIN', pageWidth / 2, pageHeight / 2 - 20, { align: 'center' });
+    
+    doc.setFontSize(18);
+    doc.text('SISTEM PORSINARA', pageWidth / 2, pageHeight / 2, { align: 'center' });
+    
+    doc.setFontSize(14);
+    doc.text('BINUS University Malang', pageWidth / 2, pageHeight / 2 + 20, { align: 'center' });
+    
+    doc.setFontSize(12);
+    doc.text(`Dibuat untuk Super User - ${new Date().toLocaleDateString('id-ID')}`, pageWidth / 2, pageHeight / 2 + 40, { align: 'center' });
+
+    // Daftar Isi
+    addNewPage();
+    doc.setTextColor(0, 0, 0);
+    addText('DAFTAR ISI', 18, true, '#0066CC');
+    yPosition += 10;
+    
+    const tocItems = [
+      '1. Pengantar',
+      '2. Daftar Link Penting',
+      '3. Hierarki Admin',
+      '4. Daftar Username dan Password Admin',
+      '5. Contoh Penggunaan Multi-User',
+      '6. Troubleshooting',
+      '7. Jenis Kompetisi',
+      '8. Menambah Pertandingan',
+      '9. Mengelola Status Pertandingan',
+      '10. Update Skor',
+      '11. Menyelesaikan Pertandingan',
+      '12. Sistem Penilaian Band/Dance',
+      '13. Perhitungan Medali',
+      '14. Sinkronisasi Medali',
+      '15. Menghapus Pertandingan',
+      '16. Reset Medali',
+      '17. Input Skor Kompetisi Tabel',
+      '18. Sorting Data',
+      '19. Export Data',
+      '20. Pembatasan Sistem'
+    ];
+    
+    tocItems.forEach(item => {
+      addText(item, 12, false, '#333333');
+    });
+
+    // 1. Pengantar
+    addNewPage();
+    addText('1. PENGANTAR', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('Selamat datang di sistem PORSINARA! Panduan ini dibuat khusus untuk Super User dalam mengelola sistem kompetisi olahraga dan seni di BINUS University Malang.', 12);
+    addText('Sistem ini memungkinkan admin untuk mengelola pertandingan secara real-time, mulai dari penambahan pertandingan, update skor, hingga perhitungan medali otomatis.', 12);
+    addText('Pastikan untuk membaca panduan ini dengan seksama sebelum menggunakan sistem.', 12);
+
+    // 2. Daftar Link Penting
+    addNewPage();
+    addText('2. DAFTAR LINK PENTING', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('Berikut adalah link-link penting yang perlu diketahui:', 12, true);
+    addText('• Website Utama: https://porsinara.netlify.app', 12);
+    addText('• Login Admin: https://porsinara.netlify.app/admin/login', 12);
+    addText('• Dashboard Admin: https://porsinara.netlify.app/admin/dashboard', 12);
+    addText('• Halaman Pertandingan: https://porsinara.netlify.app/matches', 12);
+    addText('', 12);
+    addText('Simpan link-link ini untuk akses cepat ke sistem.', 12);
+
+    // 3. Hierarki Admin
+    addNewPage();
+    addText('3. HIERARKI ADMIN', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('Sistem memiliki 3 level admin dengan hak akses yang berbeda:', 12, true);
+    yPosition += 5;
+    addText('SUP (Super User):', 14, true, '#FF6B35');
+    addText('• Akses penuh ke semua fitur', 12);
+    addText('• Dapat menambah, mengedit, menghapus pertandingan', 12);
+    addText('• Dapat sinkronisasi dan reset medali', 12);
+    addText('• Dapat export data', 12);
+    yPosition += 5;
+    addText('SPV (Supervisor):', 14, true, '#FF6B35');
+    addText('• Akses terbatas sesuai kompetisi yang ditugaskan', 12);
+    addText('• Dapat menambah, mengedit, menghapus pertandingan untuk kompetisi tertentu', 12);
+    addText('• Dapat sinkronisasi medali', 12);
+    addText('• Tidak dapat reset medali', 12);
+    yPosition += 5;
+    addText('STF (Staff):', 14, true, '#FF6B35');
+    addText('• Akses terbatas sesuai kompetisi yang ditugaskan', 12);
+    addText('• Dapat mengedit pertandingan untuk kompetisi tertentu', 12);
+    addText('• Tidak dapat menambah atau menghapus pertandingan', 12);
+    addText('• Tidak dapat sinkronisasi atau reset medali', 12);
+
+    // 4. Daftar Username dan Password
+    addNewPage();
+    addText('4. DAFTAR USERNAME DAN PASSWORD ADMIN', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('CATATAN PENTING: Informasi login ini hanya boleh dibagikan kepada 1 orang per akun untuk keamanan sistem.', 12, true, '#FF0000');
+    yPosition += 10;
+    
+    // Basketball
+    addText('BASKETBALL:', 14, true, '#FF6B35');
+    addText('• basket1 / basket567', 12);
+    addText('• basket2 / basket678', 12);
+    addText('• basket3 / basket789', 12);
+    addText('• basketspv1 / basketspv567', 12);
+    addText('• basketspv2 / basketspv678', 12);
+    addText('• basketspv3 / basketspv789', 12);
+    yPosition += 5;
+    
+    // Badminton
+    addText('BADMINTON:', 14, true, '#FF6B35');
+    addText('• badmin1 / badmin567', 12);
+    addText('• badmin2 / badmin678', 12);
+    addText('• badmin3 / badmin789', 12);
+    addText('• badminspv1 / badminspv567', 12);
+    addText('• badminspv2 / badminspv678', 12);
+    addText('• badminspv3 / badminspv789', 12);
+    yPosition += 5;
+    
+    // Band
+    addText('BAND:', 14, true, '#FF6B35');
+    addText('• band1 / band567', 12);
+    addText('• band2 / band678', 12);
+    addText('• band3 / band789', 12);
+    addText('• bandspv1 / bandspv567', 12);
+    addText('• bandspv2 / bandspv678', 12);
+    addText('• bandspv3 / bandspv789', 12);
+    yPosition += 5;
+    
+    // Dance
+    addText('DANCE:', 14, true, '#FF6B35');
+    addText('• dance1 / dance567', 12);
+    addText('• dance2 / dance678', 12);
+    addText('• dance3 / dance789', 12);
+    addText('• dancespv1 / dancespv567', 12);
+    addText('• dancespv2 / dancespv678', 12);
+    addText('• dancespv3 / dancespv789', 12);
+    yPosition += 5;
+    
+    // Esports
+    addText('ESPORTS:', 14, true, '#FF6B35');
+    addText('• esports1 / esports567', 12);
+    addText('• esports2 / esports678', 12);
+    addText('• esports3 / esports789', 12);
+    addText('• esportsspv1 / esportsspv567', 12);
+    addText('• esportsspv2 / esportsspv678', 12);
+    addText('• esportsspv3 / esportsspv789', 12);
+    yPosition += 5;
+    
+    // Futsal
+    addText('FUTSAL:', 14, true, '#FF6B35');
+    addText('• futsal1 / futsal567', 12);
+    addText('• futsal2 / futsal678', 12);
+    addText('• futsal3 / futsal789', 12);
+    addText('• futsalspv1 / futsalspv567', 12);
+    addText('• futsalspv2 / futsalspv678', 12);
+    addText('• futsalspv3 / futsalspv789', 12);
+    yPosition += 5;
+    
+    // Volleyball
+    addText('VOLLEYBALL:', 14, true, '#FF6B35');
+    addText('• volley1 / volley567', 12);
+    addText('• volley2 / volley678', 12);
+    addText('• volley3 / volley789', 12);
+    addText('• volleyspv1 / volleyspv567', 12);
+    addText('• volleyspv2 / volleyspv678', 12);
+    addText('• volleyspv3 / volleyspv789', 12);
+    yPosition += 5;
+    
+    // Super User
+    addText('SUPER USER:', 14, true, '#FF6B35');
+    addText('• sdc1 / sdc567', 12);
+    addText('• sdc2 / sdc678', 12);
+    addText('• sdc3 / sdc789', 12);
+
+    // 5. Contoh Penggunaan Multi-User
+    addNewPage();
+    addText('5. CONTOH PENGGUNAAN MULTI-USER', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('Contoh: Jika badminton putra, putri, dan ganda campuran bermain bersamaan, 3 admin dapat login secara bersamaan dan mengupdate skor masing-masing.', 12);
+    addText('Sistem mendukung multiple admin login untuk kompetisi yang berbeda atau round yang berbeda dalam kompetisi yang sama.', 12);
+    addText('Pastikan setiap admin hanya mengelola kompetisi yang menjadi tanggung jawabnya.', 12);
+
+    // 6. Troubleshooting
+    addNewPage();
+    addText('6. TROUBLESHOOTING', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('Jika setelah login layar menjadi gelap:', 12, true);
+    addText('• Refresh halaman (F5 atau Ctrl+R)', 12);
+    addText('• Pastikan koneksi internet stabil', 12);
+    addText('• Coba logout dan login kembali', 12);
+    addText('• Hubungi tim IT jika masalah berlanjut', 12);
+
+    // 7. Jenis Kompetisi
+    addNewPage();
+    addText('7. JENIS KOMPETISI', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('Sistem mendukung 2 jenis kompetisi:', 12, true);
+    yPosition += 5;
+    addText('1. HEAD TO HEAD (Basketball, Badminton, Volleyball, Futsal, Esports):', 12, true);
+    addText('• Pertandingan antara 2 tim/fakultas', 12);
+    addText('• Skor berupa angka (contoh: 21-19)', 12);
+    addText('• Pemenang ditentukan dari skor tertinggi', 12);
+    yPosition += 5;
+    addText('2. TABEL KLASEMEN (Band, Dance):', 12, true);
+    addText('• Semua tim tampil dan dinilai', 12);
+    addText('• Skor berupa nilai dari juri', 12);
+    addText('• Ranking berdasarkan skor tertinggi', 12);
+
+    // 8. Menambah Pertandingan
+    addNewPage();
+    addText('8. MENAMBAH PERTANDINGAN', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('Hanya SUP yang dapat menambah pertandingan:', 12, true);
+    addText('1. Klik tombol "Add Match" (biru)', 12);
+    addText('2. Isi informasi pertandingan:', 12);
+    addText('   • Competition: Pilih kompetisi', 12);
+    addText('   • Round: Final, 3rd Place, Qualifiers, dll', 12);
+    addText('   • Date: Tanggal pertandingan', 12);
+    addText('   • Time: Waktu pertandingan', 12);
+    addText('   • Location: Lokasi pertandingan', 12);
+    addText('   • Notes: Catatan tambahan', 12);
+    addText('   • Faculty 1 vs Faculty 2: Untuk kompetisi head to head', 12);
+    addText('   • Tidak perlu input tim untuk dance/band', 12);
+    addText('3. Pertandingan otomatis terdaftar sebagai "Upcoming"', 12);
+    addText('4. Dapat dilihat di bagian Matches', 12);
+
+    // 9. Mengelola Status Pertandingan
+    addNewPage();
+    addText('9. MENGELOLA STATUS PERTANDINGAN', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('Urutan tampilan di halaman utama:', 12, true);
+    addText('1. LIVE (sedang berlangsung) - paling atas', 12);
+    addText('2. UPCOMING (akan datang)', 12);
+    addText('3. COMPLETED (selesai) - paling bawah', 12);
+    addText('', 12);
+    addText('Di halaman /matches hanya diurutkan berdasarkan tanggal.', 12);
+    addText('', 12);
+    addText('Mengubah status pertandingan:', 12, true);
+    addText('• SUP, SPV, STF dapat mengubah status di admin panel', 12);
+    addText('• Klik ikon edit dan "Update Match"', 12);
+    addText('• Perubahan langsung terlihat di tampilan user', 12);
+    addText('• Sistem update data setiap beberapa detik', 12);
+
+    // 10. Update Skor
+    addNewPage();
+    addText('10. UPDATE SKOR', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('Cara update skor:', 12, true);
+    addText('1. Gunakan tombol panah atas/bawah di field skor', 12);
+    addText('2. Tidak perlu klik "Save Changes" atau "Update"', 12);
+    addText('3. Skor otomatis tersimpan', 12);
+    addText('4. Perubahan langsung terlihat di tampilan user', 12);
+    addText('', 12);
+    addText('Untuk kompetisi tabel (band/dance):', 12, true);
+    addText('• Klik "View Scores" atau ikon edit', 12);
+    addText('• Input skor untuk setiap tim', 12);
+    addText('• Sistem akan menampilkan top 3 setelah skor diinput', 12);
+
+    // 11. Menyelesaikan Pertandingan
+    addNewPage();
+    addText('11. MENYELESAIKAN PERTANDINGAN', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('Setelah pertandingan selesai:', 12, true);
+    addText('1. Ubah status menjadi "Completed"', 12);
+    addText('2. Pastikan skor sudah benar', 12);
+    addText('3. Untuk kompetisi tabel, pastikan semua skor sudah diinput', 12);
+    addText('4. Pertandingan akan pindah ke bagian bawah', 12);
+
+    // 12. Sistem Penilaian Band/Dance
+    addNewPage();
+    addText('12. SISTEM PENILAIAN BAND/DANCE', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('Jika kompetisi tabel selesai tapi belum ada skor:', 12, true);
+    addText('• Website menampilkan "Judges Still Judging..."', 12);
+    addText('• Setelah skor diinput, website menampilkan top 3', 12);
+    addText('• Sistem otomatis menghitung pemenang berdasarkan skor tertinggi', 12);
+
+    // 13. Perhitungan Medali
+    addNewPage();
+    addText('13. PERHITUNGAN MEDALI', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('Sistem otomatis menghitung medali:', 12, true);
+    addText('• Pemenang round "Final" = EMAS', 12);
+    addText('• Kalah round "Final" = PERAK', 12);
+    addText('• Pemenang round "3rd Place" = PERUNGGU', 12);
+    addText('• Kalah round "Lower Final" = PERUNGGU', 12);
+    addText('', 12);
+    addText('Untuk kompetisi tabel:', 12, true);
+    addText('• Posisi 1 = EMAS', 12);
+    addText('• Posisi 2 = PERAK', 12);
+    addText('• Posisi 3 = PERUNGGU', 12);
+
+    // 14. Sinkronisasi Medali
+    addNewPage();
+    addText('14. SINKRONISASI MEDALI', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('Untuk menghitung medali:', 12, true);
+    addText('1. Klik tombol "Sync Medals" (biru)', 12);
+    addText('2. Tunggu proses selesai (mungkin memakan waktu)', 12);
+    addText('3. Tunggu sampai muncul toaster "Success"', 12);
+    addText('4. Medal tally akan terupdate', 12);
+    addText('', 12);
+    addText('Best Practice:', 12, true);
+    addText('• Sync medali hanya setelah Final atau 3rd Place selesai', 12);
+    addText('• Jangan sync medali terlalu sering', 12);
+
+    // 15. Menghapus Pertandingan
+    addNewPage();
+    addText('15. MENGHAPUS PERTANDINGAN', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('Hanya SPV dan SUP yang dapat menghapus pertandingan:', 12, true);
+    addText('1. Klik ikon tempat sampah merah', 12);
+    addText('2. Konfirmasi penghapusan', 12);
+    addText('3. Pertandingan akan dihapus dari sistem', 12);
+    addText('', 12);
+    addText('PERHATIAN: Penghapusan tidak dapat dibatalkan!', 12, true, '#FF0000');
+
+    // 16. Reset Medali
+    addNewPage();
+    addText('16. RESET MEDALI', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('Hanya SUP yang dapat reset medali:', 12, true);
+    addText('1. Klik tombol merah "Reset Medals"', 12);
+    addText('2. Konfirmasi reset', 12);
+    addText('3. Semua medal tally akan menjadi 0', 12);
+    addText('', 12);
+    addText('KAPAN RESET MEDALI:', 12, true);
+    addText('• Hanya saat memulai turnamen baru', 12);
+    addText('• JANGAN reset di tengah turnamen', 12);
+    addText('', 12);
+    addText('PERHATIAN: Reset medali tidak dapat dibatalkan!', 12, true, '#FF0000');
+
+    // 17. Input Skor Kompetisi Tabel
+    addNewPage();
+    addText('17. INPUT SKOR KOMPETISI TABEL', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('Untuk kompetisi band/dance:', 12, true);
+    addText('1. Klik "View Scores" atau ikon edit', 12);
+    addText('2. Input skor untuk setiap tim/fakultas', 12);
+    addText('3. Sistem otomatis menghitung ranking', 12);
+    addText('4. Top 3 akan ditampilkan di website', 12);
+
+    // 18. Sorting Data
+    addNewPage();
+    addText('18. SORTING DATA', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('Admin dapat mengurutkan data berdasarkan:', 12, true);
+    addText('• Tanggal (ascending/descending)', 12);
+    addText('• Nama kompetisi (A-Z atau Z-A)', 12);
+    addText('', 12);
+    addText('Gunakan dropdown sorting di admin panel untuk mengatur tampilan data.', 12);
+
+    // 19. Export Data
+    addNewPage();
+    addText('19. EXPORT DATA', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('Hanya SUP yang dapat export data:', 12, true);
+    addText('1. Klik tombol "Export Data" (hijau)', 12);
+    addText('2. Pilih format:', 12);
+    addText('   • JSON: Data lengkap dalam format JSON', 12);
+    addText('   • CSV: Data pertandingan dalam format CSV', 12);
+    addText('   • Excel: Data dalam format Excel', 12);
+    addText('3. File akan otomatis terdownload', 12);
+
+    // 20. Pembatasan Sistem
+    addNewPage();
+    addText('20. PEMBATASAN SISTEM', 18, true, '#0066CC');
+    yPosition += 10;
+    addText('Beberapa hal yang TIDAK DAPAT diubah melalui sistem:', 12, true);
+    addText('', 12);
+    addText('1. TAMBAH ADMIN USER:', 12, true);
+    addText('   • Perlu ditambahkan melalui database', 12);
+    addText('   • Hubungi developer/tim IT', 12);
+    addText('', 12);
+    addText('2. TAMBAH TIM/FAKULTAS:', 12, true);
+    addText('   • Perlu ditambahkan melalui database', 12);
+    addText('   • Perlu tambahan logic coding', 12);
+    addText('   • Perlu update UI frontend', 12);
+    addText('   • Hubungi developer/tim IT', 12);
+    addText('', 12);
+    addText('3. TAMBAH CABOR (CABANG OLAHRAGA):', 12, true);
+    addText('   • Perlu ditambahkan melalui database', 12);
+    addText('   • Perlu tambahan logic coding', 12);
+    addText('   • Perlu update UI frontend', 12);
+    addText('   • Hubungi developer/tim IT', 12);
+    addText('', 12);
+    addText('Untuk perubahan di atas, hubungi tim IT atau developer.', 12, true, '#FF0000');
+
+    // Footer
+    addNewPage();
+    doc.setFillColor(0, 102, 204);
+    doc.rect(0, pageHeight - 30, pageWidth, 30, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(10);
+    doc.text('PORSINARA - BINUS University Malang', pageWidth / 2, pageHeight - 15, { align: 'center' });
+    doc.text(`Dokumen dibuat pada: ${new Date().toLocaleDateString('id-ID')}`, pageWidth / 2, pageHeight - 5, { align: 'center' });
+
+    // Download the PDF
+    doc.save(`Panduan-Admin-PORSINARA-${new Date().toISOString().split('T')[0]}.pdf`);
+    
+    addToast({
+      type: 'success',
+      title: 'PDF Berhasil Dibuat',
+      message: 'Panduan admin telah berhasil dibuat dan didownload!',
+      duration: 4000
+    });
   };
 
   // Load admin user data
@@ -851,6 +1293,16 @@ export default function AdminPanel() {
                       >
                         <span>📈</span>
                         <span>Export as Excel</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          generatePDFModule();
+                          setShowExportDropdown(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                      >
+                        <FileText className="w-4 h-4" />
+                        <span>Download PDF Module</span>
                       </button>
                     </div>
                   </div>

@@ -132,7 +132,7 @@ export default function Home() {
             faculty: {
               id: faculty.id,
               name: faculty.name,
-              short_name: faculty.short_name,
+              shortName: faculty.short_name,
               color: faculty.color
             },
             totalPoints: 0,
@@ -262,7 +262,7 @@ export default function Home() {
             faculty: {
               id: faculty.id,
               name: faculty.name,
-              short_name: faculty.short_name,
+              shortName: faculty.short_name,
               color: faculty.color
             },
             totalPoints: 0,

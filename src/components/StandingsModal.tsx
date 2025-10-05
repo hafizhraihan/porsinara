@@ -543,7 +543,7 @@ export default function StandingsModal({ competition, isOpen, onClose }: Standin
                           return (
                             <div>
                               <p className="text-gray-500 mb-2">Competition not yet started</p>
-                              <p className="text-sm text-gray-400">The competition is scheduled but hasn't begun yet.</p>
+                              <p className="text-sm text-gray-400">The competition is scheduled but hasn&apos;t begun yet.</p>
                             </div>
                           );
                         } else if (latestMatch.status === 'ongoing') {

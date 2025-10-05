@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, Plus, Edit, Trash2, Trophy, Users, TreePine, RotateCcw, RefreshCw, Shield, AlertCircle } from 'lucide-react';
-import { FACULTIES, COMPETITIONS } from '@/types';
+import { Save, Plus, Edit, Trash2, Trophy, Users, RotateCcw, RefreshCw, Shield } from 'lucide-react';
 import { getFacultyColorClasses, getCompetitionIcon } from '@/lib/utils';
 import { useToast } from '@/components/ToastContainer';
 import { 
@@ -43,10 +42,24 @@ interface AdminUser {
   competition: string | null;
 }
 
+interface Competition {
+  id: string;
+  name: string;
+  type: string;
+  icon: string;
+}
+
+interface Faculty {
+  id: string;
+  name: string;
+  short_name: string;
+  color: string;
+}
+
 export default function AdminPanel() {
   const [matches, setMatches] = useState<Match[]>([]);
-  const [competitions, setCompetitions] = useState<any[]>([]);
-  const [faculties, setFaculties] = useState<any[]>([]);
+  const [competitions, setCompetitions] = useState<Competition[]>([]);
+  const [faculties, setFaculties] = useState<Faculty[]>([]);
   const [loading, setLoading] = useState(true);
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
   const [syncingMedals, setSyncingMedals] = useState(false);
@@ -124,10 +137,6 @@ export default function AdminPanel() {
     return adminUser.role === 'SUP';
   };
 
-  const canEditMatch = () => {
-    if (!adminUser) return false;
-    return true; // All roles can edit matches
-  };
 
   // Helper function to get user's allowed competition IDs
   const getUserCompetitionIds = () => {
@@ -145,13 +154,6 @@ export default function AdminPanel() {
     return [];
   };
 
-  // Filter competitions based on user role and competition
-  const getFilteredCompetitions = () => {
-    if (!adminUser || !competitions) return [];
-    
-    const allowedCompetitionIds = getUserCompetitionIds();
-    return competitions.filter(comp => allowedCompetitionIds.includes(comp.id));
-  };
 
   // Filter matches based on user role and competition
   const getFilteredMatches = () => {
@@ -220,7 +222,7 @@ export default function AdminPanel() {
           try {
             const scores = await getArtsCompetitionScores(editingMatch.id);
             const scoresMap: {[facultyId: string]: number} = {};
-            scores.forEach((score: any) => {
+            scores.forEach((score: { faculty_id: string; score: number }) => {
               scoresMap[score.faculty_id] = score.score;
             });
             setArtsCompetitionScores(scoresMap);
@@ -258,7 +260,7 @@ export default function AdminPanel() {
         }
 
         // Transform matches data
-        const transformedMatches = matchesData.map((match: any) => {
+        const transformedMatches = matchesData.map((match: Record<string, any>) => {
           console.log('Transforming match:', match.id, {
             rawDate: match.date,
             rawTime: match.time,
@@ -316,7 +318,7 @@ export default function AdminPanel() {
     const matchesPolling = startPolling(
       getMatches,
       (data) => {
-        const transformed = data.map((match: any) => ({
+        const transformed = data.map((match: Record<string, any>) => ({
           id: match.id,
           competitionId: match.competition_id,
           faculty1Id: match.faculty1_id,
@@ -362,35 +364,6 @@ export default function AdminPanel() {
     }
   };
 
-  const handleArtsScoreUpdate = async (matchId: string, facultyId: string, score: number) => {
-    try {
-      const match = matches.find(m => m.id === matchId);
-      if (!match) return;
-
-      // For arts competitions, we need to update the specific faculty's score
-      // Since arts competitions store scores differently, we'll update the match with the new score
-      // and set the status to 'live' to indicate scoring is in progress
-      
-      // Update in Supabase - for now, we'll use faculty1Score as the main score field
-      // In a more complex implementation, you might want separate score fields per faculty
-      await updateMatchScore(matchId, score, match.faculty2Score, 'live');
-      
-      // Update local state
-      setMatches(prevMatches => 
-        prevMatches.map(m => 
-          m.id === matchId 
-            ? { 
-                ...m, 
-                faculty1Score: score, // Store the score in faculty1Score for now
-                status: 'ongoing' as any
-              }
-            : m
-        )
-      );
-    } catch (error) {
-      console.error('Error updating arts score:', error);
-    }
-  };
 
   const handleStatusUpdate = async (matchId: string, status: Match['status']) => {
     try {
@@ -432,7 +405,7 @@ export default function AdminPanel() {
         
         // Refresh matches from database after update
         const updatedMatches = await getMatches();
-        const transformedMatches = updatedMatches.map((match: any) => ({
+        const transformedMatches = updatedMatches.map((match: Record<string, any>) => ({
           id: match.id,
           competitionId: match.competition_id,
           faculty1Id: match.faculty1_id,
@@ -464,7 +437,8 @@ export default function AdminPanel() {
           date: matchData.date || new Date().toISOString().split('T')[0],
           time: timeFormatted,
           location: matchData.location || 'Main Field',
-          round: matchData.round || 'Regular'
+          round: matchData.round || 'Regular',
+          status: supabaseStatus
         };
         
         console.log('Sending match data to createMatch:', matchDataToSend);
@@ -479,7 +453,7 @@ export default function AdminPanel() {
         
         // Refresh matches from database
         const updatedMatches = await getMatches();
-        const transformedMatches = updatedMatches.map((match: any) => ({
+        const transformedMatches = updatedMatches.map((match: Record<string, any>) => ({
           id: match.id,
           competitionId: match.competition_id,
           faculty1Id: match.faculty1_id,
@@ -800,7 +774,7 @@ export default function AdminPanel() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center space-x-2">
                           {(() => {
-                            const competition = COMPETITIONS.find(c => c.id === match.competitionId);
+                            const competition = competitions.find((c: Competition) => c.id === match.competitionId);
                             const IconComponent = competition ? getCompetitionIcon(competition.icon) : null;
                             return IconComponent ? <IconComponent className="w-4 h-4 text-gray-600" /> : null;
                           })()}
@@ -1008,7 +982,7 @@ export default function AdminPanel() {
                 
                 // Refresh matches
                 const updatedMatches = await getMatches();
-                const transformedMatches = updatedMatches.map((match: any) => ({
+                const transformedMatches = updatedMatches.map((match: Record<string, any>) => ({
                   id: match.id,
                   competitionId: match.competition_id,
                   faculty1Id: match.faculty1_id,
@@ -1145,7 +1119,7 @@ export default function AdminPanel() {
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-3">Faculty Scores</label>
                             <div className="grid grid-cols-2 gap-4">
-                              {faculties.map((faculty, index) => (
+                              {faculties.map((faculty) => (
                                 <div key={faculty.id}>
                                   <label className="block text-sm font-medium text-gray-600 mb-1">
                                     <div className="flex items-center space-x-2">

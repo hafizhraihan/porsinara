@@ -2,17 +2,10 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Lock, User, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Lock, User, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/components/ToastContainer';
 import { supabase } from '@/lib/supabase';
 
-interface AdminUser {
-  id: string;
-  username: string;
-  password: string;
-  role: 'SUP' | 'SPV' | 'STF';
-  competition: string | null;
-}
 
 export default function AdminLogin() {
   const [username, setUsername] = useState('');

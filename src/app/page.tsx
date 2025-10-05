@@ -412,7 +412,7 @@ export default function Home() {
         <section className="mb-12">
           <div className="flex items-center mb-6">
             <Trophy className="w-6 h-6 text-yellow-500 mr-2" />
-            <h2 className="text-2xl font-bold text-gray-900">Medal Tally</h2>
+            <h2 className="text-lg sm:text-2xl font-bold text-gray-900">Medal Tally</h2>
           </div>
           
           <div className="bg-white rounded-lg shadow-md overflow-hidden">
@@ -420,25 +420,25 @@ export default function Home() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-2 sm:px-6 py-1 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Rank
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-2 sm:px-6 py-1 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Faculty
                     </th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-2 sm:px-6 py-1 sm:py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       🥇 Gold
                     </th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-2 sm:px-6 py-1 sm:py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       🥈 Silver
                     </th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-2 sm:px-6 py-1 sm:py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       🥉 Bronze
                     </th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-2 sm:px-6 py-1 sm:py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Total Medals
                     </th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-2 sm:px-6 py-1 sm:py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Points*
                     </th>
                   </tr>
@@ -448,7 +448,7 @@ export default function Home() {
                     <tr key={standing.faculty.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm ${
+                          <div className={`w-5 h-5 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-white font-bold text-xs sm:text-sm ${
                             standing.rank === 1 ? 'bg-yellow-500' :
                             standing.rank === 2 ? 'bg-gray-400' :
                             standing.rank === 3 ? 'bg-orange-600' :
@@ -462,27 +462,27 @@ export default function Home() {
                         <div className="flex items-center">
                           <div className={`w-4 h-4 rounded-full mr-3 ${getFacultyColorClasses(standing.faculty.id).split(' ')[0]}`}></div>
                           <div>
-                            <div className="text-sm font-medium text-gray-900">{standing.faculty.shortName}</div>
-                            <div className="text-sm text-gray-500">{standing.faculty.name}</div>
+                            <div className="text-xs sm:text-sm font-medium text-gray-900">{standing.faculty.shortName}</div>
+                            <div className="text-xs sm:text-sm text-gray-500">{standing.faculty.name}</div>
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <span className="text-lg font-bold text-yellow-600">{standing.gold}</span>
+                        <span className="text-xs sm:text-lg font-bold text-yellow-600">{standing.gold}</span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <span className="text-lg font-bold text-gray-500">{standing.silver}</span>
+                        <span className="text-xs sm:text-lg font-bold text-gray-500">{standing.silver}</span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <span className="text-lg font-bold text-orange-600">{standing.bronze}</span>
+                        <span className="text-xs sm:text-lg font-bold text-orange-600">{standing.bronze}</span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <span className="text-lg font-bold text-gray-900">
+                        <span className="text-xs sm:text-lg font-bold text-gray-900">
                           {standing.gold + standing.silver + standing.bronze}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <span className="text-lg font-bold text-blue-600">{standing.totalPoints}</span>
+                        <span className="text-xs sm:text-lg font-bold text-blue-600">{standing.totalPoints}</span>
                       </td>
                     </tr>
                   ))}
@@ -504,7 +504,7 @@ export default function Home() {
             <div className="relative">
               <div className="flex items-center mb-6">
                 <Calendar className="w-6 h-6 text-blue-500 mr-2" />
-                <h2 className="text-2xl font-bold text-gray-900">Matches</h2>
+                <h2 className="text-lg sm:text-2xl font-bold text-gray-900">Matches</h2>
               </div>
               
               <div className="grid grid-cols-1 gap-6">
@@ -520,7 +520,7 @@ export default function Home() {
                       const IconComponent = match.competition?.icon ? getCompetitionIcon(match.competition.icon) : null;
                       return IconComponent ? <IconComponent className="w-5 h-5 text-gray-600" /> : null;
                     })()}
-                    <h3 className="text-lg font-semibold text-gray-900">{match.competition?.name || 'Unknown Competition'}</h3>
+                    <h3 className="text-sm sm:text-lg font-semibold text-gray-900">{match.competition?.name || 'Unknown Competition'}</h3>
                     {/* Round Information */}
                     {match.round && (
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -534,7 +534,7 @@ export default function Home() {
                       </span>
                     )}
                   </div>
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                  <span className={`px-1 sm:px-3 py-1 rounded-full text-xs font-medium ${
                     match.status === 'ongoing' 
                       ? 'bg-red-100 text-red-800' 
                       : match.status === 'completed'
@@ -565,7 +565,7 @@ export default function Home() {
                               alt={altText}
                               className="w-13 h-13 object-contain"
                             />
-                            <div className="text-sm font-medium text-black">Performing...</div>
+                            <div className="text-xs sm:text-sm font-medium text-black">Performing...</div>
                           </div>
                         </div>
                       );
@@ -584,7 +584,7 @@ export default function Home() {
                                 alt="Judges Still Judging"
                                 className="w-13 h-13 object-contain"
                               />
-                              <div className="text-sm font-medium text-black">Judges Still Judging...</div>
+                              <div className="text-xs sm:text-sm font-medium text-black">Judges Still Judging...</div>
                             </div>
                           </div>
                         );
@@ -600,9 +600,9 @@ export default function Home() {
                             <div className="flex justify-center mb-3">
                               <div className="flex items-center space-x-2 scale-110">
                                 <div className={`w-4 h-4 rounded-full ${getFacultyColorClasses(top3[0].faculty_id).split(' ')[0]}`}></div>
-                                <span className="text-base font-semibold text-gray-900">{top3[0].faculty?.short_name || 'Unknown'}</span>
+                                <span className="text-xs sm:text-base font-semibold text-gray-900">{top3[0].faculty?.short_name || 'Unknown'}</span>
                                 <Trophy className="w-5 h-5 text-yellow-500" />
-                                <span className="text-base font-bold text-gray-900">{top3[0].score}</span>
+                                <span className="text-xs sm:text-base font-bold text-gray-900">{top3[0].score}</span>
                               </div>
                             </div>
                             {/* 2nd and 3rd place below */}
@@ -610,10 +610,10 @@ export default function Home() {
                               {top3.slice(1).map((score, index) => (
                                 <div key={score.faculty_id} className="flex items-center space-x-2">
                                   <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(score.faculty_id).split(' ')[0]}`}></div>
-                                  <span className="text-sm font-medium text-gray-900">{score.faculty?.short_name || 'Unknown'}</span>
+                                  <span className="text-xs sm:text-sm font-medium text-gray-900">{score.faculty?.short_name || 'Unknown'}</span>
                                   {index === 0 && <Trophy className="w-4 h-4 text-gray-400" />}
                                   {index === 1 && <Trophy className="w-4 h-4 text-orange-600" />}
-                                  <span className="text-sm font-bold text-gray-900">{score.score}</span>
+                                  <span className="text-xs sm:text-sm font-bold text-gray-900">{score.score}</span>
                                 </div>
                               ))}
                             </div>
@@ -626,7 +626,7 @@ export default function Home() {
                         <div className="mb-4 text-center">
                           <div className="text-black mb-2">
                             <Calendar className="w-5 h-5 mx-auto mb-2" />
-                            <div className="text-sm font-medium">Mark your calendar!</div>
+                            <div className="text-xs sm:text-sm font-medium">Mark your calendar!</div>
                           </div>
                         </div>
                       );
@@ -637,10 +637,10 @@ export default function Home() {
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center space-x-3">
                           <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty1.id).split(' ')[0]}`}></div>
-                          <span className="font-medium text-gray-900">{match.faculty1.shortName}</span>
+                          <span className="text-xs sm:text-base font-medium text-gray-900">{match.faculty1.shortName}</span>
                         </div>
                         <div className="text-center">
-                          <div className="text-2xl font-bold text-gray-900">
+                          <div className="text-base sm:text-2xl font-bold text-gray-900">
                             {match.score1} - {match.score2}
                           </div>
                           {match.status === 'completed' && (
@@ -660,7 +660,7 @@ export default function Home() {
                           )}
                         </div>
                         <div className="flex items-center space-x-3">
-                          <span className="font-medium text-gray-900">{match.faculty2.shortName}</span>
+                          <span className="text-xs sm:text-base font-medium text-gray-900">{match.faculty2.shortName}</span>
                           <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty2.id).split(' ')[0]}`}></div>
                         </div>
                       </div>
@@ -669,7 +669,7 @@ export default function Home() {
                 })()}
 
                 {/* Date, Time, Location */}
-                <div className="flex items-center justify-between text-sm text-gray-600">
+                <div className="flex items-center justify-between text-xs sm:text-sm text-gray-600">
                   <div className="flex items-center space-x-4">
                     <div className="flex items-center space-x-1">
                       <Calendar className="w-4 h-4" />
@@ -717,11 +717,11 @@ export default function Home() {
             <div>
               <div className="flex items-center mb-6">
                 <Users className="w-6 h-6 text-purple-500 mr-2" />
-                <h2 className="text-2xl font-bold text-gray-900">Competitions</h2>
+                <h2 className="text-lg sm:text-2xl font-bold text-gray-900">Competitions</h2>
               </div>
               
               <div className="bg-white rounded-lg shadow-md p-6">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               {competitions.map((competition) => {
                 const IconComponent = getCompetitionIcon(competition.icon);
                 const isSport = competition.type === 'sport';
@@ -729,7 +729,7 @@ export default function Home() {
                   <div 
                     key={competition.id} 
                     onClick={() => handleCompetitionClick(competition)}
-                    className={`relative p-4 rounded-lg text-center overflow-hidden cursor-pointer transition-all duration-200 hover:shadow-lg border group ${
+                    className={`relative p-2 sm:p-4 rounded-lg text-center overflow-hidden cursor-pointer transition-all duration-200 hover:shadow-lg border group ${
                       isSport ? 'border-blue-200' : 'border-purple-200'
                     }`}
                     style={{}}
@@ -780,7 +780,7 @@ export default function Home() {
                       <div className="flex justify-center mb-3">
                         <IconComponent className="w-8 h-8 text-white" />
                       </div>
-                      <div className="font-medium text-sm text-white">
+                      <div className="font-medium text-xs sm:text-sm text-white">
                         {competition.name}
                       </div>
                     </div>
@@ -816,7 +816,7 @@ export default function Home() {
                   style={{ color: 'transparent' }}
                   suppressHydrationWarning
                 />
-                <span className="text-gray-400 mt-4 text-3xl">|</span>
+                <span className="text-gray-400 mt-4 text-3xl font-thin">|</span>
                 <span className="text-xl font-bold text-gray-900 mt-7">PORSINARA</span>
               </div>
               

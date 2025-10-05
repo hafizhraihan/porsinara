@@ -229,7 +229,7 @@ export default function StandingsModal({ competition, isOpen, onClose }: Standin
             ) : competition.format === 'elimination' ? (
               /* Elimination Bracket */
               <div className="space-y-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Tournament Bracket</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Scores & Fixtures</h3>
                 
         {matches.length === 0 ? (
           <div className="text-center py-8">

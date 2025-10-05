@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Trophy, Users, Calendar, Clock, MapPin } from 'lucide-react';
 import Link from 'next/link';
 import { Competition } from '@/types';
@@ -85,6 +85,8 @@ export default function Home() {
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [loading, setLoading] = useState(true);
   const [artsScores, setArtsScores] = useState<{[matchId: string]: ArtsScore[]}>({});
+  const [showArrow, setShowArrow] = useState(true);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Utility function to format date
   const formatDate = (dateString: string) => {
@@ -387,6 +389,75 @@ export default function Home() {
     };
   }, []);
 
+  // Handle scroll events for arrow visibility
+  useEffect(() => {
+    const handleScroll = () => {
+      if (scrollContainerRef.current) {
+        const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
+        
+        // Show arrow only when at the left edge (scrollLeft is very close to 0)
+        const isAtLeftEdge = scrollLeft < 1; // Use < 1 to handle floating point precision
+        console.log('ARROW DEBUG - Scroll position:', scrollLeft, 'Scroll width:', scrollWidth, 'Client width:', clientWidth);
+        console.log('ARROW DEBUG - Show arrow:', isAtLeftEdge);
+        setShowArrow(isAtLeftEdge);
+      } else {
+        console.log('ARROW DEBUG - No scroll container ref found!');
+        setShowArrow(false);
+      }
+    };
+
+    // Wait for ref to be available and data to be loaded
+    const timer = setTimeout(() => {
+      if (scrollContainerRef.current && !loading) {
+        console.log('ARROW DEBUG - Adding scroll listener to:', scrollContainerRef.current);
+        scrollContainerRef.current.addEventListener('scroll', handleScroll);
+        
+        // Initial check
+        handleScroll();
+        
+        return () => {
+          if (scrollContainerRef.current) {
+            scrollContainerRef.current.removeEventListener('scroll', handleScroll);
+          }
+        };
+      } else {
+        console.log('ARROW DEBUG - Ref not available or still loading');
+      }
+    }, 1000);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [loading]); // Run when loading changes (after data is loaded)
+
+  // Alternative scroll listener - simpler approach
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    
+    if (!scrollContainer) {
+      console.log('SIMPLE SCROLL - No scroll container found');
+      return;
+    }
+    
+    const handleScroll = () => {
+      const { scrollLeft } = scrollContainer;
+      const isAtLeftEdge = scrollLeft < 1;
+      console.log('SIMPLE SCROLL - Position:', scrollLeft, 'Show arrow:', isAtLeftEdge);
+      setShowArrow(isAtLeftEdge);
+    };
+    
+    console.log('SIMPLE SCROLL - Adding listener to:', scrollContainer);
+    scrollContainer.addEventListener('scroll', handleScroll);
+    
+    // Initial check
+    handleScroll();
+    
+    return () => {
+      console.log('SIMPLE SCROLL - Removing listener');
+      scrollContainer.removeEventListener('scroll', handleScroll);
+    };
+  }, [facultyStandings.length]); // Run when standings data is available
+
   // Show loading state
   if (loading) {
     return (
@@ -410,8 +481,15 @@ export default function Home() {
             <h2 className="text-lg sm:text-2xl font-bold text-gray-900">Medal Tally</h2>
           </div>
           
-          <div className="bg-white rounded-lg shadow-md overflow-hidden">
-            <div className="overflow-x-auto">
+          <div className="bg-white rounded-lg shadow-md overflow-hidden relative">
+            {/* Floating arrow indicator - positioned in middle vertically, only shows at left edge */}
+            <div className={`sm:hidden absolute top-1/2 right-4 z-20 transform -translate-y-1/2 transition-opacity duration-300 ease-in-out ${showArrow ? 'opacity-100' : 'opacity-0'}`}>
+              <div className="bg-blue-500 text-white px-3 py-1 rounded-full shadow-lg arrow-grow flex items-center justify-center">
+                <span className="text-sm font-regular">--&gt;</span>
+              </div>
+            </div>
+            
+            <div className="overflow-x-auto" ref={scrollContainerRef}>
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
@@ -716,7 +794,7 @@ export default function Home() {
               </div>
               
               <div className="bg-white rounded-lg shadow-md p-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                <div className="grid grid-cols-2 gap-3 sm:gap-4">
               {competitions.map((competition) => {
                 const IconComponent = getCompetitionIcon(competition.icon);
                 const isSport = competition.type === 'sport';

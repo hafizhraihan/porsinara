@@ -89,3 +89,17 @@ body {
     background: linear-gradient(to top, #0a0a0a 0%, transparent 100%) !important;
   }
 }
+
+/* Floating arrow grow animation */
+@keyframes arrow-grow {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+}
+
+.arrow-grow {
+  animation: arrow-grow 1.5s ease-in-out infinite;
+}

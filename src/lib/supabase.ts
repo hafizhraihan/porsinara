@@ -1,9 +1,38 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+// Environment variables with fallbacks for build time
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Check if we're in a build environment
+const isBuildTime = typeof window === 'undefined' && process.env.NODE_ENV === 'production'
+
+// Create client only if environment variables are available
+let supabase: SupabaseClient
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  if (isBuildTime) {
+    // During build time, create a mock client
+    supabase = createClient(
+      'https://placeholder.supabase.co',
+      'placeholder-key',
+      {
+        auth: { persistSession: false },
+        global: { fetch: () => Promise.resolve(new Response('{}')) }
+      }
+    )
+  } else {
+    throw new Error('Missing Supabase environment variables')
+  }
+} else {
+  supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: !isBuildTime
+    }
+  })
+}
+
+export { supabase }
 
 // Database Types
 export interface Database {

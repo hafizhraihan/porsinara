@@ -47,6 +47,7 @@ interface Match {
   competition?: {
     id: string;
     name: string;
+    short_name: string;
     icon: string;
   };
 }
@@ -139,6 +140,7 @@ export default function MatchesPage() {
             competition: {
               id: match.competition_id,
               name: match.competition?.name || 'Unknown Competition',
+              short_name: match.competition?.short_name || 'Unknown',
               icon: match.competition?.icon || 'FaFutbol'
             }
           }))
@@ -160,7 +162,15 @@ export default function MatchesPage() {
           if (competition?.type === 'art' && match.status === 'completed') {
             try {
               const scores = await getArtsCompetitionScores(match.id);
-              artsScoresMap[match.id] = scores;
+              // Transform scores to map short_name to shortName
+              const transformedScores = scores.map((score: any) => ({
+                ...score,
+                faculty: score.faculty ? {
+                  ...score.faculty,
+                  shortName: score.faculty.short_name
+                } : undefined
+              }));
+              artsScoresMap[match.id] = transformedScores;
             } catch (error) {
               console.error(`Error fetching arts scores for match ${match.id}:`, error);
               artsScoresMap[match.id] = [];
@@ -220,6 +230,7 @@ export default function MatchesPage() {
             competition: {
               id: match.competition_id,
               name: match.competition?.name || 'Unknown Competition',
+              short_name: match.competition?.short_name || 'Unknown',
               icon: match.competition?.icon || 'FaFutbol'
             }
           }))
@@ -242,7 +253,15 @@ export default function MatchesPage() {
           if (competition?.type === 'art' && match.status === 'completed') {
             try {
               const scores = await getArtsCompetitionScores(match.id);
-              artsScoresMap[match.id] = scores;
+              // Transform scores to map short_name to shortName
+              const transformedScores = scores.map((score: any) => ({
+                ...score,
+                faculty: score.faculty ? {
+                  ...score.faculty,
+                  shortName: score.faculty.short_name
+                } : undefined
+              }));
+              artsScoresMap[match.id] = transformedScores;
             } catch (error) {
               console.error(`Polling: Error fetching arts scores for match ${match.id}:`, error);
               artsScoresMap[match.id] = [];
@@ -378,7 +397,7 @@ export default function MatchesPage() {
                           const IconComponent = match.competition?.icon ? getCompetitionIcon(match.competition.icon) : null;
                           return IconComponent ? <IconComponent className="w-5 h-5 text-gray-600" /> : null;
                         })()}
-                        <h3 className="text-sm sm:text-lg font-semibold text-gray-900">{match.competition?.name || 'Unknown Competition'}</h3>
+                        <h3 className="text-sm sm:text-lg font-semibold text-gray-900">{match.competition?.short_name || 'Unknown Competition'}</h3>
                         {/* Round Information */}
                         {match.round && (
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${

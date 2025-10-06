@@ -47,7 +47,6 @@ interface Match {
   competition?: {
     id: string;
     name: string;
-    short_name: string;
     icon: string;
   };
 }
@@ -140,7 +139,6 @@ export default function MatchesPage() {
             competition: {
               id: match.competition_id,
               name: match.competition?.name || 'Unknown Competition',
-              short_name: match.competition?.short_name || 'Unknown',
               icon: match.competition?.icon || 'FaFutbol'
             }
           }))
@@ -230,7 +228,6 @@ export default function MatchesPage() {
             competition: {
               id: match.competition_id,
               name: match.competition?.name || 'Unknown Competition',
-              short_name: match.competition?.short_name || 'Unknown',
               icon: match.competition?.icon || 'FaFutbol'
             }
           }))
@@ -397,7 +394,7 @@ export default function MatchesPage() {
                           const IconComponent = match.competition?.icon ? getCompetitionIcon(match.competition.icon) : null;
                           return IconComponent ? <IconComponent className="w-5 h-5 text-gray-600" /> : null;
                         })()}
-                        <h3 className="text-sm sm:text-lg font-semibold text-gray-900">{match.competition?.short_name || 'Unknown Competition'}</h3>
+                        <h3 className="text-sm sm:text-lg font-semibold text-gray-900">{match.competition?.name || 'Unknown Competition'}</h3>
                         {/* Round Information */}
                         {match.round && (
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${

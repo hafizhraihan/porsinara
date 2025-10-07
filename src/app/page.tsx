@@ -581,7 +581,7 @@ export default function Home() {
               </div>
               
               <div className="grid grid-cols-1 gap-6">
-            {liveMatches.slice(0, 3).map((match) => (
+            {liveMatches.slice(0, 4).map((match) => (
               <div key={match.id} className={`bg-white rounded-lg shadow-md p-6 border ${
                 match.status === 'ongoing' 
                   ? 'border-red-300 border-pulse' 
@@ -807,7 +807,7 @@ export default function Home() {
                     }`}
                     style={{}}
                   >
-                    {/* Background Image Zoom Effect */}
+                    {/* Background Image Zoom Effect  yang baru belum di ganti imagenya*/  }
                     <div 
                       className="absolute inset-0 transition-transform duration-200 group-hover:scale-125"
                       style={{
@@ -821,12 +821,18 @@ export default function Home() {
                           ? `url('https://stillmed.olympics.com/media/Images/OlympicOrg/News/2017/04/11/2017-04-11-Volleyball-thumbnail.jpg?interpolation=lanczos-none&resize=2120:1200')`
                           : competition.id === 'esports'
                           ? `url('https://evolveetfs.com/wp-content/uploads/2022/06/HERO_image1-scaled.jpg')`
+                          : competition.id === 'esports-valorant'
+                          ? `url('https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQzrK5YSbjShTytpemfJ4ZPVWb1siZ6o0JLI2m1YwfZvAmiwyoELchEJ35tTzObl3NRjqs&usqp=CAU')`
                           : competition.id === 'badminton-putra'
                           ? `url('https://images.pexels.com/photos/8007419/pexels-photo-8007419.jpeg?cs=srgb&dl=pexels-shvets-production-8007419.jpg&fm=jpg')`
                           : competition.id === 'badminton-putri'
                           ? `url('https://img.olympics.com/images/image/private/t_16-9_640/f_auto/primary/xubxfwfgzwch91r0yfbd')`
                           : competition.id === 'badminton-mixed'
                           ? `url('https://www.thestatesman.com/wp-content/uploads/2023/01/badminton-iStock-1.jpg')`
+                          : competition.id === 'badminton-mens-double'
+                          ? `url('https://cdn.shopify.com/s/files/1/0618/0323/3506/files/shutterstock_1581443815.jpg?v=1653614065')`
+                          : competition.id === 'badminton-womens-double'
+                          ? `url('https://tse1.mm.bing.net/th/id/OIP.gFki0mJX9qRZdCJY06NZyAHaE8?cb=12&w=2560&h=1707&rs=1&pid=ImgDetMain&o=7&rm=3')`
                           : competition.id === 'band'
                           ? `url('https://thumbs.dreamstime.com/b/music-band-performing-stage-multiracial-59012401.jpg')`
                           : competition.id === 'dance'

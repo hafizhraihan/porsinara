@@ -268,6 +268,7 @@ export async function createMatch(match: {
   time: string
   location: string
   round?: string
+  youtube_stream_link?: string
 }): Promise<void> {
   console.log('Creating match with data:', match)
   
@@ -562,6 +563,7 @@ export async function updateMatch(matchId: string, updates: {
   time?: string
   location?: string
   round?: string
+  youtube_stream_link?: string
 }): Promise<void> {
   console.log('Updating match:', matchId, 'with updates:', updates)
   

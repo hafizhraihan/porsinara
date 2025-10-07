@@ -34,6 +34,7 @@ interface Match {
   location?: string;
   round?: string;
   notes?: string;
+  youtubeStreamLink?: string;
 }
 
 interface AdminUser {
@@ -888,7 +889,8 @@ export default function AdminPanel() {
             time: match.time ? match.time.substring(0, 5) : '09:00', // Convert HH:MM:SS to HH:MM
             location: match.location ?? 'Main Field',
             round: match.round ?? 'Semifinal',
-            notes: match.notes ?? ''
+            notes: match.notes ?? '',
+            youtubeStreamLink: match.youtube_stream_link ?? ''
           };
           
           console.log('Transformed result:', transformed);
@@ -938,7 +940,8 @@ export default function AdminPanel() {
           time: match.time ? match.time.substring(0, 5) : '09:00', // Convert HH:MM:SS to HH:MM
           location: match.location ?? 'Main Field',
           round: match.round ?? 'Semifinal',
-          notes: match.notes ?? ''
+          notes: match.notes ?? '',
+          youtubeStreamLink: match.youtube_stream_link ?? ''
         }));
         setMatches(transformed);
       },
@@ -1008,7 +1011,8 @@ export default function AdminPanel() {
           date: matchData.date || new Date().toISOString().split('T')[0],
           time: matchData.time || '09:00:00',
           location: matchData.location || 'Main Field',
-          round: matchData.round || 'Regular'
+          round: matchData.round || 'Regular',
+          youtube_stream_link: matchData.youtubeStreamLink || ''
         });
         
         // Refresh matches from database after update
@@ -1046,7 +1050,8 @@ export default function AdminPanel() {
           time: timeFormatted,
           location: matchData.location || 'Main Field',
           round: matchData.round || 'Regular',
-          status: supabaseStatus
+          status: supabaseStatus,
+          youtube_stream_link: matchData.youtubeStreamLink || ''
         };
         
         console.log('Sending match data to createMatch:', matchDataToSend);
@@ -1644,7 +1649,8 @@ export default function AdminPanel() {
                     date: formData.get('date') as string,
                     time: formData.get('time') as string,
                     location: formData.get('location') as string,
-                    round: formData.get('round') as string
+                    round: formData.get('round') as string,
+                    youtube_stream_link: formData.get('youtubeStreamLink') as string
                   });
                 
                 // Refresh matches
@@ -1686,7 +1692,8 @@ export default function AdminPanel() {
                   time: formData.get('time') as string,
                   location: formData.get('location') as string,
                   round: formData.get('round') as string,
-                  notes: formData.get('notes') as string
+                  notes: formData.get('notes') as string,
+                  youtubeStreamLink: formData.get('youtubeStreamLink') as string
                 });
               }
               } catch (error) {
@@ -1922,6 +1929,17 @@ export default function AdminPanel() {
                     <option value="Final">Final</option>
                     <option value="Regular">Regular</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">YouTube Live Stream Link</label>
+                  <input
+                    type="url"
+                    name="youtubeStreamLink"
+                    defaultValue={editingMatch?.youtubeStreamLink}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                    placeholder="https://www.youtube.com/watch?v=..."
+                  />
                 </div>
 
                 <div>

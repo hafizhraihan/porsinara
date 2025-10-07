@@ -30,6 +30,7 @@ export interface Match {
   time?: string;
   location?: string;
   round?: string;
+  youtubeStreamLink?: string;
 }
 
 export interface Score {

@@ -221,6 +221,124 @@ export interface Database {
           updated_at?: string
         }
       }
+      players: {
+        Row: {
+          id: string
+          name: string
+          student_id: string
+          faculty_id: string
+          position: string | null
+          jersey_number: number | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          student_id: string
+          faculty_id: string
+          position?: string | null
+          jersey_number?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          student_id?: string
+          faculty_id?: string
+          position?: string | null
+          jersey_number?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      basketball_stats: {
+        Row: {
+          id: string
+          match_id: string
+          player_id: string
+          // Shooting stats
+          free_throw_made: number
+          free_throw_attempt: number
+          two_point_made: number
+          two_point_attempt: number
+          three_point_made: number
+          three_point_attempt: number
+          // Rebound stats
+          offensive_rebound: number
+          defensive_rebound: number
+          total_rebound: number // Auto-calculated
+          // Other stats
+          assists: number
+          steals: number
+          blocks: number
+          turnovers: number
+          fouls: number
+          total_points: number // Auto-calculated
+          // Metadata
+          minutes_played: number
+          is_starter: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          match_id: string
+          player_id: string
+          // Shooting stats
+          free_throw_made?: number
+          free_throw_attempt?: number
+          two_point_made?: number
+          two_point_attempt?: number
+          three_point_made?: number
+          three_point_attempt?: number
+          // Rebound stats
+          offensive_rebound?: number
+          defensive_rebound?: number
+          total_rebound?: number // Auto-calculated by trigger
+          // Other stats
+          assists?: number
+          steals?: number
+          blocks?: number
+          turnovers?: number
+          fouls?: number
+          total_points?: number // Auto-calculated by trigger
+          // Metadata
+          minutes_played?: number
+          is_starter?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          match_id?: string
+          player_id?: string
+          // Shooting stats
+          free_throw_made?: number
+          free_throw_attempt?: number
+          two_point_made?: number
+          two_point_attempt?: number
+          three_point_made?: number
+          three_point_attempt?: number
+          // Rebound stats
+          offensive_rebound?: number
+          defensive_rebound?: number
+          total_rebound?: number // Auto-calculated by trigger
+          // Other stats
+          assists?: number
+          steals?: number
+          blocks?: number
+          turnovers?: number
+          fouls?: number
+          total_points?: number // Auto-calculated by trigger
+          // Metadata
+          minutes_played?: number
+          is_starter?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+      }
     }
   }
 }

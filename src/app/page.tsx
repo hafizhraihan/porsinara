@@ -68,6 +68,7 @@ interface Match {
   time: string;
   location: string;
   round?: string;
+  youtubeStreamLink?: string;
   competition?: {
     id: string;
     name: string;
@@ -195,6 +196,7 @@ export default function Home() {
             time: match.time,
             location: match.location,
             round: match.round,
+            youtubeStreamLink: match.youtube_stream_link,
             competition: {
               id: match.competition_id,
               name: match.competition?.name || 'Unknown Competition',
@@ -331,6 +333,7 @@ export default function Home() {
             time: match.time,
             location: match.location,
             round: match.round,
+            youtubeStreamLink: match.youtube_stream_link,
             competition: {
               id: match.competition_id,
               name: match.competition?.name || 'Unknown Competition',
@@ -581,7 +584,7 @@ export default function Home() {
               </div>
               
               <div className="grid grid-cols-1 gap-6">
-            {liveMatches.slice(0, 3).map((match) => (
+            {liveMatches.slice(0, 4).map((match) => (
               <div key={match.id} className={`bg-white rounded-lg shadow-md p-6 border ${
                 match.status === 'ongoing' 
                   ? 'border-red-300 border-pulse' 
@@ -607,15 +610,29 @@ export default function Home() {
                       </span>
                     )}
                   </div>
-                  <span className={`px-1 sm:px-3 py-1 rounded-full text-xs font-medium ${
-                    match.status === 'ongoing' 
-                      ? 'bg-red-100 text-red-800' 
-                      : match.status === 'completed'
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-yellow-100 text-yellow-800'
-                  }`}>
-                    {match.status === 'ongoing' ? 'LIVE' : match.status === 'completed' ? 'COMPLETED' : 'UPCOMING'}
-                  </span>
+                  <div className="flex items-center space-x-2">
+                  {match.youtubeStreamLink && (
+                      <button
+                        onClick={() => window.open(match.youtubeStreamLink, '_blank')}
+                        className="text-red-600 hover:text-red-800 transition-colors"
+                        title="Watch Live Stream"
+                      >
+                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                        </svg>
+                      </button>
+                    )}
+                    <span className={`px-1 sm:px-3 py-1 rounded-full text-xs font-medium ${
+                      match.status === 'ongoing' 
+                        ? 'bg-red-100 text-red-800' 
+                        : match.status === 'completed'
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      {match.status === 'ongoing' ? 'LIVE' : match.status === 'completed' ? 'COMPLETED' : 'UPCOMING'}
+                    </span>
+                    
+                  </div>
                 </div>
                 
                 {/* Check if this is an arts competition */}
@@ -821,12 +838,18 @@ export default function Home() {
                           ? `url('https://stillmed.olympics.com/media/Images/OlympicOrg/News/2017/04/11/2017-04-11-Volleyball-thumbnail.jpg?interpolation=lanczos-none&resize=2120:1200')`
                           : competition.id === 'esports'
                           ? `url('https://evolveetfs.com/wp-content/uploads/2022/06/HERO_image1-scaled.jpg')`
+                          : competition.id === 'esports-valorant'
+                          ? `url('https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQzrK5YSbjShTytpemfJ4ZPVWb1siZ6o0JLI2m1YwfZvAmiwyoELchEJ35tTzObl3NRjqs&usqp=CAU')`
                           : competition.id === 'badminton-putra'
                           ? `url('https://images.pexels.com/photos/8007419/pexels-photo-8007419.jpeg?cs=srgb&dl=pexels-shvets-production-8007419.jpg&fm=jpg')`
                           : competition.id === 'badminton-putri'
                           ? `url('https://img.olympics.com/images/image/private/t_16-9_640/f_auto/primary/xubxfwfgzwch91r0yfbd')`
                           : competition.id === 'badminton-mixed'
                           ? `url('https://www.thestatesman.com/wp-content/uploads/2023/01/badminton-iStock-1.jpg')`
+                          : competition.id === 'badminton-mens-double'
+                          ? `url('https://cdn.shopify.com/s/files/1/0618/0323/3506/files/shutterstock_1581443815.jpg?v=1653614065')`
+                          : competition.id === 'badminton-womens-double'
+                          ? `url('https://tse1.mm.bing.net/th/id/OIP.gFki0mJX9qRZdCJY06NZyAHaE8?cb=12&w=2560&h=1707&rs=1&pid=ImgDetMain&o=7&rm=3')`
                           : competition.id === 'band'
                           ? `url('https://thumbs.dreamstime.com/b/music-band-performing-stage-multiracial-59012401.jpg')`
                           : competition.id === 'dance'

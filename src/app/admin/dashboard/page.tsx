@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Save, Plus, Edit, Trash2, Trophy, Users, RotateCcw, RefreshCw, Shield, Download, ChevronDown, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { getFacultyColorClasses, getCompetitionIcon } from '@/lib/utils';
@@ -17,6 +17,10 @@ import {
   syncMedalTally,
   saveArtsCompetitionScores,
   getArtsCompetitionScores,
+  getPlayers,
+  getPlayersByFaculty,
+  getBasketballStats,
+  saveBasketballStats,
   startPolling,
   stopPolling
 } from '@/lib/supabase-queries';
@@ -33,6 +37,7 @@ interface Match {
   time?: string;
   location?: string;
   round?: string;
+  youtubeStreamLink?: string;
   notes?: string;
 }
 
@@ -73,6 +78,12 @@ export default function AdminPanel() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [sortBy, setSortBy] = useState<'date' | 'competition'>('date');
   const [showExportDropdown, setShowExportDropdown] = useState(false);
+  
+  // Basketball stats state
+  const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
+  const [team1Players, setTeam1Players] = useState<any[]>([]);
+  const [team2Players, setTeam2Players] = useState<any[]>([]);
+  const [playerStats, setPlayerStats] = useState<{[playerId: string]: any}>({});
 
   // Export functions
   const exportToJSON = () => {
@@ -771,6 +782,193 @@ export default function AdminPanel() {
     return matches.filter(match => allowedCompetitionIds.includes(match.competitionId));
   };
 
+  // Basketball stats functions
+  const toggleStatsExpand = async (matchId: string) => {
+    if (expandedMatchId === matchId) {
+      // Collapse
+      setExpandedMatchId(null);
+      setTeam1Players([]);
+      setTeam2Players([]);
+      setPlayerStats({});
+    } else {
+      // Expand - load both teams' players
+      setExpandedMatchId(matchId);
+      
+      const match = matches.find(m => m.id === matchId);
+      if (match) {
+        try {
+          // Load both teams' players in parallel
+          const [team1, team2, existingStats] = await Promise.all([
+            getPlayersByFaculty(match.faculty1Id),
+            getPlayersByFaculty(match.faculty2Id),
+            getBasketballStats(matchId)
+          ]);
+          
+          setTeam1Players(team1);
+          setTeam2Players(team2);
+          
+          // Initialize player stats with existing data or zeros
+          const initialStats: {[playerId: string]: any} = {};
+          
+          [...team1, ...team2].forEach(player => {
+            const existingStat = existingStats.find((s: any) => s.player_id === player.id);
+            initialStats[player.id] = existingStat || {
+              free_throw_made: 0,
+              free_throw_attempt: 0,
+              two_point_made: 0,
+              two_point_attempt: 0,
+              three_point_made: 0,
+              three_point_attempt: 0,
+              offensive_rebound: 0,
+              defensive_rebound: 0,
+              assists: 0,
+              steals: 0,
+              blocks: 0,
+              turnovers: 0,
+              fouls: 0,
+              minutes_played: 0,
+              is_starter: false
+            };
+          });
+          
+          setPlayerStats(initialStats);
+        } catch (error: any) {
+          console.error('Error loading basketball stats:', error);
+          addToast({
+            type: 'error',
+            title: 'Error',
+            message: 'Failed to load players. Please try again.'
+          });
+          setExpandedMatchId(null);
+        }
+      }
+    }
+  };
+
+  // Check if match is a basketball match
+  const isBasketballMatch = (match: Match) => {
+    const competition = competitions.find(c => c.id === match.competitionId);
+    return competition?.name.toLowerCase().includes('basketball');
+  };
+
+  // Update player stat value
+  const updatePlayerStat = (playerId: string, field: string, value: number) => {
+    setPlayerStats(prev => ({
+      ...prev,
+      [playerId]: {
+        ...prev[playerId],
+        [field]: Math.max(0, value) // Ensure non-negative
+      }
+    }));
+  };
+
+  // Increment stat
+  const incrementStat = (playerId: string, field: string) => {
+    const currentValue = playerStats[playerId]?.[field] || 0;
+    updatePlayerStat(playerId, field, currentValue + 1);
+  };
+
+  // Decrement stat
+  const decrementStat = (playerId: string, field: string) => {
+    const currentValue = playerStats[playerId]?.[field] || 0;
+    updatePlayerStat(playerId, field, currentValue - 1);
+  };
+
+  // Calculate player totals
+  const calculatePlayerTotals = (playerId: string) => {
+    const stats = playerStats[playerId];
+    if (!stats) return { totalPoints: 0, totalRebound: 0 };
+    
+    const totalPoints = 
+      (stats.free_throw_made || 0) + 
+      ((stats.two_point_made || 0) * 2) + 
+      ((stats.three_point_made || 0) * 3);
+    
+    const totalRebound = (stats.offensive_rebound || 0) + (stats.defensive_rebound || 0);
+    
+    return { totalPoints, totalRebound };
+  };
+
+  // Save all basketball stats
+  const handleSaveAllBasketballStats = async () => {
+    if (!expandedMatchId) return;
+
+    // Validate all players' stats
+    for (const playerId in playerStats) {
+      const stats = playerStats[playerId];
+      
+      // Skip validation if player has no stats entered
+      const hasAnyStats = Object.values(stats).some((v: any) => typeof v === 'number' && v > 0);
+      if (!hasAnyStats) continue;
+      
+      // Validate shooting stats (made cannot exceed attempt)
+      if (stats.free_throw_made > stats.free_throw_attempt) {
+        addToast({
+          type: 'error',
+          title: 'Validation Error',
+          message: `Player has free throws made (${stats.free_throw_made}) > attempts (${stats.free_throw_attempt})`
+        });
+        return;
+      }
+
+      if (stats.two_point_made > stats.two_point_attempt) {
+        addToast({
+          type: 'error',
+          title: 'Validation Error',
+          message: `Player has 2-point made (${stats.two_point_made}) > attempts (${stats.two_point_attempt})`
+        });
+        return;
+      }
+
+      if (stats.three_point_made > stats.three_point_attempt) {
+        addToast({
+          type: 'error',
+          title: 'Validation Error',
+          message: `Player has 3-point made (${stats.three_point_made}) > attempts (${stats.three_point_attempt})`
+        });
+        return;
+      }
+    }
+
+    try {
+      // Prepare stats for all players who have any stats entered
+      const statsToSave = Object.entries(playerStats)
+        .filter(([playerId, stats]) => {
+          // Only save if player has any non-zero stats
+          return Object.entries(stats).some(([key, value]) => 
+            key !== 'is_starter' && typeof value === 'number' && value > 0
+          );
+        })
+        .map(([playerId, stats]) => ({
+          player_id: playerId,
+          ...stats
+        }));
+
+      if (statsToSave.length === 0) {
+        addToast({
+          type: 'warning',
+          title: 'No Stats',
+          message: 'Please enter stats for at least one player'
+        });
+        return;
+      }
+
+      await saveBasketballStats(expandedMatchId, statsToSave);
+
+      addToast({
+        type: 'success',
+        title: 'Success',
+        message: `Stats saved for ${statsToSave.length} player(s)!`
+      });
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: 'Error',
+        message: error.message || 'Failed to save basketball stats'
+      });
+    }
+  };
+
   // Sort matches by selected criteria
   const sortedMatches = [...getFilteredMatches()].sort((a, b) => {
     if (sortBy === 'date') {
@@ -888,7 +1086,8 @@ export default function AdminPanel() {
             time: match.time ? match.time.substring(0, 5) : '09:00', // Convert HH:MM:SS to HH:MM
             location: match.location ?? 'Main Field',
             round: match.round ?? 'Semifinal',
-            notes: match.notes ?? ''
+            notes: match.notes ?? '',
+            youtubeStreamLink: match.youtube_stream_link ?? ''
           };
           
           console.log('Transformed result:', transformed);
@@ -938,7 +1137,8 @@ export default function AdminPanel() {
           time: match.time ? match.time.substring(0, 5) : '09:00', // Convert HH:MM:SS to HH:MM
           location: match.location ?? 'Main Field',
           round: match.round ?? 'Semifinal',
-          notes: match.notes ?? ''
+          notes: match.notes ?? '',
+          youtubeStreamLink: match.youtube_stream_link ?? ''
         }));
         setMatches(transformed);
       },
@@ -997,7 +1197,7 @@ export default function AdminPanel() {
       if (editingMatch) {
         // Update existing match
         const supabaseStatus = matchData.status === 'ongoing' ? 'live' : matchData.status === 'completed' ? 'completed' : 'scheduled';
-        
+
         await updateMatch(editingMatch.id, {
           competition_id: matchData.competitionId,
           faculty1_id: matchData.faculty1Id,
@@ -1008,7 +1208,8 @@ export default function AdminPanel() {
           date: matchData.date || new Date().toISOString().split('T')[0],
           time: matchData.time || '09:00:00',
           location: matchData.location || 'Main Field',
-          round: matchData.round || 'Regular'
+          round: matchData.round || 'Regular',
+          youtube_stream_link: matchData.youtubeStreamLink || ''
         });
         
         // Refresh matches from database after update
@@ -1046,7 +1247,8 @@ export default function AdminPanel() {
           time: timeFormatted,
           location: matchData.location || 'Main Field',
           round: matchData.round || 'Regular',
-          status: supabaseStatus
+          status: supabaseStatus,
+          youtube_stream_link: matchData.youtubeStreamLink || ''
         };
         
         console.log('Sending match data to createMatch:', matchDataToSend);
@@ -1437,7 +1639,8 @@ export default function AdminPanel() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {sortedMatches.map((match) => (
-                    <tr key={match.id}>
+                    <React.Fragment key={match.id}>
+                    <tr>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center space-x-2">
                           {(() => {
@@ -1543,44 +1746,55 @@ export default function AdminPanel() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex space-x-2">
+                          {/* Basketball Stats Button */}
+                          {isBasketballMatch(match) && (
                             <button
-                              onClick={() => {
-                                console.log('Edit button clicked for match:', match);
-                                console.log('Match keys:', Object.keys(match));
-                                console.log('Match date:', match.date);
-                                console.log('Match time:', match.time);
-                                console.log('Match location:', match.location);
-                                console.log('Match round:', match.round);
-                                console.log('All match properties:', {
-                                  id: match.id,
-                                  competitionId: match.competitionId,
-                                  faculty1Id: match.faculty1Id,
-                                  faculty2Id: match.faculty2Id,
-                                  faculty1Score: match.faculty1Score,
-                                  faculty2Score: match.faculty2Score,
-                                  status: match.status,
-                                  date: match.date,
-                                  time: match.time,
-                                  location: match.location,
-                                  round: match.round,
-                                  notes: match.notes
-                                });
-                                
-                                // Ensure editingMatch has all required fields with fallbacks
-                                const matchWithFallbacks = {
-                                  ...match,
-                                  date: match.date ?? new Date().toISOString().split('T')[0],
-                                  time: match.time ? match.time.substring(0, 5) : '09:00', // Convert HH:MM:SS to HH:MM
-                                  location: match.location ?? 'Main Field',
-                                  round: match.round ?? 'Semifinal',
-                                  notes: match.notes ?? ''
-                                };
-                                
-                                console.log('Match with fallbacks:', matchWithFallbacks);
-                                setEditingMatch(matchWithFallbacks);
-                              }}
-                              className="text-blue-600 hover:text-blue-900"
+                              onClick={() => toggleStatsExpand(match.id)}
+                              className={`${expandedMatchId === match.id ? 'text-green-600' : 'text-purple-600'} hover:text-purple-900`}
+                              title="Player Stats"
                             >
+                              <ChevronDown className={`w-4 h-4 transition-transform ${expandedMatchId === match.id ? 'rotate-180' : ''}`} />
+                            </button>
+                          )}
+                          
+                          <button
+                            onClick={() => {
+                              console.log('Edit button clicked for match:', match);
+                              console.log('Match keys:', Object.keys(match));
+                              console.log('Match date:', match.date);
+                              console.log('Match time:', match.time);
+                              console.log('Match location:', match.location);
+                              console.log('Match round:', match.round);
+                              console.log('All match properties:', {
+                                id: match.id,
+                                competitionId: match.competitionId,
+                                faculty1Id: match.faculty1Id,
+                                faculty2Id: match.faculty2Id,
+                                faculty1Score: match.faculty1Score,
+                                faculty2Score: match.faculty2Score,
+                                status: match.status,
+                                date: match.date,
+                                time: match.time,
+                                location: match.location,
+                                round: match.round,
+                                notes: match.notes
+                              });
+                              
+                              // Ensure editingMatch has all required fields with fallbacks
+                              const matchWithFallbacks = {
+                                ...match,
+                                date: match.date ?? new Date().toISOString().split('T')[0],
+                                time: match.time ? match.time.substring(0, 5) : '09:00', // Convert HH:MM:SS to HH:MM
+                                location: match.location ?? 'Main Field',
+                                round: match.round ?? 'Semifinal',
+                                notes: match.notes ?? ''
+                              };
+                              
+                              console.log('Match with fallbacks:', matchWithFallbacks);
+                              setEditingMatch(matchWithFallbacks);
+                            }}
+                            className="text-blue-600 hover:text-blue-900"
+                          >
                             <Edit className="w-4 h-4" />
                           </button>
                           {canDeleteMatch() && (
@@ -1594,6 +1808,291 @@ export default function AdminPanel() {
                         </div>
                       </td>
                     </tr>
+                    
+                    {/* Expandable Basketball Stats Row */}
+                    {isBasketballMatch(match) && expandedMatchId === match.id && (
+                      <tr>
+                        <td colSpan={8} className="px-6 py-6 bg-gray-50">
+                          <div className="w-full">
+                            <h4 className="text-lg font-semibold mb-4 text-gray-900 text-center">🏀 Input Player Stats</h4>
+                            
+                            {/* Stats Table */}
+                            <div className="overflow-x-auto">
+                              <table className="w-full border-collapse bg-white">
+                                <thead>
+                                  <tr className="bg-gray-100">
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900">Player</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900" colSpan={2}>Free Throw</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900" colSpan={2}>2PT</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900" colSpan={2}>3PT</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900" colSpan={2}>Rebound</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900">Assists</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900">Turnovers</th>
+                                  </tr>
+                                  <tr className="bg-gray-50">
+                                    <th className="border px-2 py-1 text-xs text-gray-600"></th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600">Attempt</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600">Successful</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600">Attempt</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600">Successful</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600">Attempt</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600">Successful</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600">Offensive</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600">Defensive</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600"></th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600"></th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {/* Team 1 Players */}
+                                  <tr>
+                                    <td 
+                                      colSpan={11} 
+                                      className={`border px-2 py-1 text-sm font-semibold text-white ${getFacultyColorClasses(match.faculty1Id).split(' ')[0]}`}
+                                    >
+                                      {faculties.find(f => f.id === match.faculty1Id)?.name || 'Team 1'} ({team1Players.length} players)
+                                    </td>
+                                  </tr>
+                                  {team1Players.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={11} className="border px-2 py-2 text-xs text-gray-500 text-center">
+                                        No players found for this faculty
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    team1Players.map(player => {
+                                      const stats = playerStats[player.id] || {};
+                                      const totals = calculatePlayerTotals(player.id);
+                                      
+                                      return (
+                                        <tr key={player.id} className="hover:bg-blue-50">
+                                          <td className="border px-2 py-2 text-xs text-gray-900">
+                                            <div className="font-medium">{player.name}</div>
+                                            <div className="text-gray-600">#{player.jersey_number}</div>
+                                          </td>
+                                          
+                                          {/* Free Throws */}
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'free_throw_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.free_throw_attempt || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'free_throw_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'free_throw_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.free_throw_made || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'free_throw_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* 2-Point */}
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'two_point_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.two_point_attempt || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'two_point_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'two_point_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.two_point_made || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'two_point_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* 3-Point */}
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'three_point_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.three_point_attempt || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'three_point_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'three_point_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.three_point_made || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'three_point_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Rebounds */}
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'offensive_rebound')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.offensive_rebound || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'offensive_rebound')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'defensive_rebound')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.defensive_rebound || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'defensive_rebound')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Assists */}
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'assists')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.assists || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'assists')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Turnovers */}
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'turnovers')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.turnovers || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'turnovers')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })
+                                  )}
+                                  
+                                  {/* Team 2 Players */}
+                                  <tr>
+                                    <td 
+                                      colSpan={11} 
+                                      className={`border px-2 py-1 text-sm font-semibold text-white ${getFacultyColorClasses(match.faculty2Id).split(' ')[0]}`}
+                                    >
+                                      {faculties.find(f => f.id === match.faculty2Id)?.name || 'Team 2'} ({team2Players.length} players)
+                                    </td>
+                                  </tr>
+                                  {team2Players.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={11} className="border px-2 py-2 text-xs text-gray-500 text-center">
+                                        No players found for this faculty
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    team2Players.map(player => {
+                                      const stats = playerStats[player.id] || {};
+                                      const totals = calculatePlayerTotals(player.id);
+                                      
+                                      return (
+                                        <tr key={player.id} className="hover:bg-green-50">
+                                          <td className="border px-2 py-2 text-xs text-gray-900">
+                                            <div className="font-medium">{player.name}</div>
+                                            <div className="text-gray-600">#{player.jersey_number}</div>
+                                          </td>
+                                          
+                                          {/* Free Throws */}
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'free_throw_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.free_throw_attempt || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'free_throw_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'free_throw_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.free_throw_made || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'free_throw_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* 2-Point */}
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'two_point_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.two_point_attempt || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'two_point_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'two_point_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.two_point_made || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'two_point_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* 3-Point */}
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'three_point_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.three_point_attempt || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'three_point_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'three_point_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.three_point_made || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'three_point_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Rebounds */}
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'offensive_rebound')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.offensive_rebound || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'offensive_rebound')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'defensive_rebound')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.defensive_rebound || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'defensive_rebound')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Assists */}
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'assists')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.assists || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'assists')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Turnovers */}
+                                          <td className="border px-1 py-1">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'turnovers')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.turnovers || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'turnovers')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex justify-end gap-2 mt-4">
+                              <button
+                                onClick={handleSaveAllBasketballStats}
+                                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm font-medium"
+                              >
+                                💾 Save All Stats
+                              </button>
+                              <button
+                                onClick={() => toggleStatsExpand(match.id)}
+                                className="px-4 py-2 border rounded-lg hover:bg-gray-100 text-sm font-medium text-gray-900"
+                              >
+                                Close
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
@@ -1644,7 +2143,8 @@ export default function AdminPanel() {
                     date: formData.get('date') as string,
                     time: formData.get('time') as string,
                     location: formData.get('location') as string,
-                    round: formData.get('round') as string
+                    round: formData.get('round') as string,
+                    youtube_stream_link: formData.get('youtubeStreamLink') as string
                   });
                 
                 // Refresh matches
@@ -1686,7 +2186,8 @@ export default function AdminPanel() {
                   time: formData.get('time') as string,
                   location: formData.get('location') as string,
                   round: formData.get('round') as string,
-                  notes: formData.get('notes') as string
+                  notes: formData.get('notes') as string,
+                  youtube_stream_link: formData.get('youtubeStreamLink') as string
                 });
               }
               } catch (error) {
@@ -1922,6 +2423,17 @@ export default function AdminPanel() {
                     <option value="Final">Final</option>
                     <option value="Regular">Regular</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">YouTube Live Stream Link</label>
+                  <input
+                    type="url"
+                    name="youtubeStreamLink"
+                    defaultValue={editingMatch?.youtubeStreamLink}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                    placeholder="https://www.youtube.com/watch?v=..."
+                  />
                 </div>
 
                 <div>

@@ -268,6 +268,7 @@ export async function createMatch(match: {
   time: string
   location: string
   round?: string
+  youtube_stream_link?: string
 }): Promise<void> {
   console.log('Creating match with data:', match)
   
@@ -562,6 +563,7 @@ export async function updateMatch(matchId: string, updates: {
   time?: string
   location?: string
   round?: string
+  youtube_stream_link?: string
 }): Promise<void> {
   console.log('Updating match:', matchId, 'with updates:', updates)
   
@@ -1003,4 +1005,250 @@ export async function getArtsCompetitionScores(matchId: string): Promise<any[]> 
     console.error('Error fetching arts competition scores:', error)
     throw error
   }
+}
+
+// ===== PLAYER MANAGEMENT =====
+
+export async function getPlayers(): Promise<any[]> {
+  const { data, error } = await supabase
+    .from('players')
+    .select(`
+      *,
+      faculty:faculties(id, name, short_name, color)
+    `)
+    .order('name')
+
+  if (error) {
+    console.error('Error fetching players:', error)
+    throw error
+  }
+
+  return data || []
+}
+
+export async function getPlayersByFaculty(facultyId: string): Promise<any[]> {
+  const { data, error } = await supabase
+    .from('players')
+    .select(`
+      *,
+      faculty:faculties(id, name, short_name, color)
+    `)
+    .eq('faculty_id', facultyId)
+    .order('name')
+
+  if (error) {
+    console.error('Error fetching players by faculty:', error)
+    throw error
+  }
+
+  return data || []
+}
+
+export async function createPlayer(player: {
+  name: string
+  student_id: string
+  faculty_id: string
+  position?: string
+  jersey_number?: number
+}): Promise<void> {
+  const { error } = await supabase
+    .from('players')
+    .insert(player)
+
+  if (error) {
+    console.error('Error creating player:', error)
+    throw error
+  }
+}
+
+export async function updatePlayer(playerId: string, updates: {
+  name?: string
+  student_id?: string
+  faculty_id?: string
+  position?: string
+  jersey_number?: number
+}): Promise<void> {
+  const { error } = await supabase
+    .from('players')
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', playerId)
+
+  if (error) {
+    console.error('Error updating player:', error)
+    throw error
+  }
+}
+
+export async function deletePlayer(playerId: string): Promise<void> {
+  const { error } = await supabase
+    .from('players')
+    .delete()
+    .eq('id', playerId)
+
+  if (error) {
+    console.error('Error deleting player:', error)
+    throw error
+  }
+}
+
+// ===== BASKETBALL STATS =====
+
+export async function getBasketballStats(matchId: string): Promise<any[]> {
+  try {
+    const { data, error } = await supabase
+      .from('basketball_stats')
+      .select(`
+        *,
+        player:players(
+          id,
+          name,
+          jersey_number,
+          position,
+          faculty:faculties(id, name, short_name, color)
+        )
+      `)
+      .eq('match_id', matchId)
+
+    if (error) {
+      console.error('Error fetching basketball stats:', error)
+      console.error('Error details:', JSON.stringify(error, null, 2))
+      // Return empty array instead of throwing - stats might not exist yet
+      return []
+    }
+
+    return data || []
+  } catch (error) {
+    console.error('Unexpected error fetching basketball stats:', error)
+    // Return empty array for graceful failure
+    return []
+  }
+}
+
+export async function saveBasketballStats(
+  matchId: string,
+  stats: Array<{
+    player_id: string
+    // Shooting stats
+    free_throw_made?: number
+    free_throw_attempt?: number
+    two_point_made?: number
+    two_point_attempt?: number
+    three_point_made?: number
+    three_point_attempt?: number
+    // Rebound stats
+    offensive_rebound?: number
+    defensive_rebound?: number
+    // Other stats
+    assists?: number
+    steals?: number
+    blocks?: number
+    turnovers?: number
+    fouls?: number
+    // Metadata
+    minutes_played?: number
+    is_starter?: boolean
+  }>
+): Promise<void> {
+  try {
+    console.log('Saving basketball stats for match:', matchId)
+    console.log('Stats data:', stats)
+    
+    // Delete existing stats for this match
+    const { error: deleteError } = await supabase
+      .from('basketball_stats')
+      .delete()
+      .eq('match_id', matchId)
+    
+    if (deleteError) {
+      console.error('Error deleting old stats:', deleteError)
+      // Continue anyway - might be first time entering stats
+    }
+    
+    // Insert new stats
+    const statsData = stats.map(stat => ({
+      match_id: matchId,
+      ...stat
+    }))
+    
+    console.log('Inserting stats:', statsData)
+    
+    const { data, error } = await supabase
+      .from('basketball_stats')
+      .insert(statsData)
+      .select()
+    
+    if (error) {
+      console.error('Error inserting basketball stats:', error)
+      console.error('Error details:', JSON.stringify(error, null, 2))
+      throw error
+    }
+    
+    console.log('Basketball stats saved successfully:', data)
+  } catch (error) {
+    console.error('Error saving basketball stats:', error)
+    throw error
+  }
+}
+
+export async function updateBasketballStat(
+  statId: string,
+  updates: {
+    // Shooting stats
+    free_throw_made?: number
+    free_throw_attempt?: number
+    two_point_made?: number
+    two_point_attempt?: number
+    three_point_made?: number
+    three_point_attempt?: number
+    // Rebound stats
+    offensive_rebound?: number
+    defensive_rebound?: number
+    // Other stats
+    assists?: number
+    steals?: number
+    blocks?: number
+    turnovers?: number
+    fouls?: number
+    // Metadata
+    minutes_played?: number
+    is_starter?: boolean
+  }
+): Promise<void> {
+  const { error } = await supabase
+    .from('basketball_stats')
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', statId)
+
+  if (error) {
+    console.error('Error updating basketball stat:', error)
+    throw error
+  }
+}
+
+export async function getPlayerBasketballStats(playerId: string): Promise<any[]> {
+  const { data, error } = await supabase
+    .from('basketball_stats')
+    .select(`
+      *,
+      match:matches(
+        id,
+        date,
+        competition:competitions(name)
+      )
+    `)
+    .eq('player_id', playerId)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.error('Error fetching player basketball stats:', error)
+    throw error
+  }
+
+  return data || []
 }

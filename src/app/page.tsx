@@ -69,6 +69,18 @@ interface Match {
   location: string;
   round?: string;
   youtubeStreamLink?: string;
+  currentPeriod?: string;
+  // Volleyball set scores
+  set1Score1?: number;
+  set1Score2?: number;
+  set2Score1?: number;
+  set2Score2?: number;
+  set3Score1?: number;
+  set3Score2?: number;
+  set4Score1?: number;
+  set4Score2?: number;
+  set5Score1?: number;
+  set5Score2?: number;
   competition?: {
     id: string;
     name: string;
@@ -88,6 +100,53 @@ export default function Home() {
   const [artsScores, setArtsScores] = useState<{[matchId: string]: ArtsScore[]}>({});
   const [showArrow, setShowArrow] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [matchQuarters, setMatchQuarters] = useState<{[matchId: string]: string}>({});
+
+  // Listen for localStorage changes to sync quarter updates
+  useEffect(() => {
+    const handleStorageChange = () => {
+      // Re-initialize quarters when localStorage changes
+      if (liveMatches.length > 0) {
+        initializeQuarters(liveMatches);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [liveMatches]);
+
+  // Initialize quarters from localStorage (set by admin)
+  const initializeQuarters = (matches: Match[]) => {
+    const quarters: {[matchId: string]: string} = {};
+    console.log('Initializing quarters for matches:', matches);
+    
+    // Get quarters from localStorage (set by admin)
+    const storedQuarters = JSON.parse(localStorage.getItem('matchQuarters') || '{}');
+    console.log('Stored quarters from localStorage:', storedQuarters);
+    
+    matches.forEach(match => {
+      console.log(`Match ${match.id}: competitionId=${match.competitionId}, status=${match.status}`);
+      if (match.competitionId === 'basketball-putra' || match.competitionId === 'basketball-putri') {
+        // Use quarter set by admin from localStorage
+        if (storedQuarters[match.id]) {
+          quarters[match.id] = storedQuarters[match.id];
+          console.log(`Using admin-set quarter for match ${match.id}: ${storedQuarters[match.id]}`);
+        } else {
+          // Fallback to hardcode based on match status
+          if (match.status === 'ongoing') {
+            quarters[match.id] = 'Q3'; // Set ongoing matches to Q3 for demo
+          } else if (match.status === 'completed') {
+            quarters[match.id] = 'FT'; // Set completed matches to FT
+          } else {
+            quarters[match.id] = 'Q1'; // Set upcoming matches to Q1
+          }
+          console.log(`Using fallback quarter for match ${match.id}: ${quarters[match.id]}`);
+        }
+      }
+    });
+    console.log('Final quarters object:', quarters);
+    setMatchQuarters(quarters);
+  };
 
   // Utility function to format date
   const formatDate = (dateString: string) => {
@@ -162,6 +221,7 @@ export default function Home() {
 
         // Transform matches data and sort by date
         console.log('Raw matches data at', new Date().toLocaleTimeString(), ':', matchesData);
+        console.log('Volleyball matches:', matchesData.filter((m: any) => m.competition_id === 'volleyball'));
         const transformedMatches = matchesData
           .map((match: Record<string, any>) => ({
             id: match.id,
@@ -197,6 +257,18 @@ export default function Home() {
             location: match.location,
             round: match.round,
             youtubeStreamLink: match.youtube_stream_link,
+            currentPeriod: match.current_period,
+            // Volleyball set scores
+            set1Score1: match.set1_score1,
+            set1Score2: match.set1_score2,
+            set2Score1: match.set2_score1,
+            set2Score2: match.set2_score2,
+            set3Score1: match.set3_score1,
+            set3Score2: match.set3_score2,
+            set4Score1: match.set4_score1,
+            set4Score2: match.set4_score2,
+            set5Score1: match.set5_score1,
+            set5Score2: match.set5_score2,
             competition: {
               id: match.competition_id,
               name: match.competition?.name || 'Unknown Competition',
@@ -244,6 +316,7 @@ export default function Home() {
         setLiveMatches(transformedMatches);
         setCompetitions(competitionsData);
         setArtsScores(artsScoresMap);
+        initializeQuarters(transformedMatches);
         setLoading(false);
       } catch (error) {
         console.error('Error fetching data:', error);
@@ -298,7 +371,7 @@ export default function Home() {
     const matchesPolling = startPolling(
       getMatches,
       async (data) => {
-        console.log('Polling matches data:', data);
+        console.log('🔄 User page polling matches data:', data);
         const transformed = data
           .map((match: Record<string, any>) => ({
             id: match.id,
@@ -334,6 +407,18 @@ export default function Home() {
             location: match.location,
             round: match.round,
             youtubeStreamLink: match.youtube_stream_link,
+            currentPeriod: match.current_period,
+            // Volleyball set scores
+            set1Score1: match.set1_score1,
+            set1Score2: match.set1_score2,
+            set2Score1: match.set2_score1,
+            set2Score2: match.set2_score2,
+            set3Score1: match.set3_score1,
+            set3Score2: match.set3_score2,
+            set4Score1: match.set4_score1,
+            set4Score2: match.set4_score2,
+            set5Score1: match.set5_score1,
+            set5Score2: match.set5_score2,
             competition: {
               id: match.competition_id,
               name: match.competition?.name || 'Unknown Competition',
@@ -381,6 +466,25 @@ export default function Home() {
 
         setLiveMatches(transformed);
         setArtsScores(artsScoresMap);
+        initializeQuarters(transformed);
+        
+        // Debug volleyball set scores
+        const volleyballMatches = transformed.filter((m: any) => m.competitionId === 'volleyball');
+        if (volleyballMatches.length > 0) {
+          console.log('🏐 User page volleyball matches with set scores:', volleyballMatches.map((m: any) => ({
+            id: m.id,
+            set1Score1: m.set1Score1,
+            set1Score2: m.set1Score2,
+            set2Score1: m.set2Score1,
+            set2Score2: m.set2Score2,
+            set3Score1: m.set3Score1,
+            set3Score2: m.set3Score2,
+            set4Score1: m.set4Score1,
+            set4Score2: m.set4Score2,
+            set5Score1: m.set5Score1,
+            set5Score2: m.set5Score2
+          })));
+        }
       },
       5000 // Poll every 5 seconds
     );
@@ -730,9 +834,136 @@ export default function Home() {
                           <span className="text-xs sm:text-base font-medium text-gray-900">{match.faculty1.shortName}</span>
                         </div>
                         <div className="text-center">
-                          <div className="text-base sm:text-2xl font-bold text-gray-900">
-                            {match.score1} - {match.score2}
-                          </div>
+                          {/* Quarter indicator for basketball matches - positioned above score */}
+                          {match.competitionId === 'basketball-putra' || match.competitionId === 'basketball-putri' ? (
+                            <div className="text-sm px font-semibold text-gray-600 mb-1">
+                              {match.currentPeriod || 'Q1'}
+                            </div>
+                          ) : null}
+                          
+                          {/* Volleyball set scores display */}
+                          {match.competitionId === 'volleyball' ? (
+                            <div className="text-center mb-2">
+                              <div className="text-sm font-semibold text-gray-600 mb-1">
+                                {match.currentPeriod || 'Set 1'}
+                              </div>
+                              <div className="text-base sm:text-2xl font-bold text-gray-900 mb-1">
+                                {match.score1} - {match.score2}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {(() => {
+                                  console.log('🏐 User page volleyball match set scores:', {
+                                    matchId: match.id,
+                                    set1Score1: match.set1Score1,
+                                    set1Score2: match.set1Score2,
+                                    set2Score1: match.set2Score1,
+                                    set2Score2: match.set2Score2,
+                                    set3Score1: match.set3Score1,
+                                    set3Score2: match.set3Score2,
+                                    set4Score1: match.set4Score1,
+                                    set4Score2: match.set4Score2,
+                                    set5Score1: match.set5Score1,
+                                    set5Score2: match.set5Score2
+                                  });
+                                  const setScores = [];
+                                  if (match.set1Score1 !== null && match.set1Score1 !== undefined && 
+                                      match.set1Score2 !== null && match.set1Score2 !== undefined) {
+                                    setScores.push(`${match.set1Score1}-${match.set1Score2}`);
+                                  }
+                                  if (match.set2Score1 !== null && match.set2Score1 !== undefined && 
+                                      match.set2Score2 !== null && match.set2Score2 !== undefined) {
+                                    setScores.push(`${match.set2Score1}-${match.set2Score2}`);
+                                  }
+                                  if (match.set3Score1 !== null && match.set3Score1 !== undefined && 
+                                      match.set3Score2 !== null && match.set3Score2 !== undefined) {
+                                    setScores.push(`${match.set3Score1}-${match.set3Score2}`);
+                                  }
+                                  if (match.set4Score1 !== null && match.set4Score1 !== undefined && 
+                                      match.set4Score2 !== null && match.set4Score2 !== undefined) {
+                                    setScores.push(`${match.set4Score1}-${match.set4Score2}`);
+                                  }
+                                  if (match.set5Score1 !== null && match.set5Score1 !== undefined && 
+                                      match.set5Score2 !== null && match.set5Score2 !== undefined) {
+                                    setScores.push(`${match.set5Score1}-${match.set5Score2}`);
+                                  }
+                                  const result = setScores.length > 0 ? setScores.join(' | ') : '0-0';
+                                  console.log('🏐 User page set scores result:', result);
+                                  return result;
+                                })()}
+                              </div>
+                            </div>
+                          ) : null}
+                          
+                          {/* Badminton set scores display */}
+                          {(match.competitionId === 'badminton-putra' || match.competitionId === 'badminton-putri' || match.competitionId === 'badminton-mixed') ? (
+                            <div className="text-center mb-2">
+                              <div className="text-sm font-semibold text-gray-600 mb-1">
+                                {match.currentPeriod || 'Set 1'}
+                              </div>
+                              <div className="text-base sm:text-2xl font-bold text-gray-900 mb-1">
+                                {match.score1} - {match.score2}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {(() => {
+                                  console.log('🏸 User page badminton match set scores:', {
+                                    matchId: match.id,
+                                    set1Score1: match.set1Score1,
+                                    set1Score2: match.set1Score2,
+                                    set2Score1: match.set2Score1,
+                                    set2Score2: match.set2Score2,
+                                    set3Score1: match.set3Score1,
+                                    set3Score2: match.set3Score2
+                                  });
+                                  const setScores = [];
+                                  if (match.set1Score1 !== null && match.set1Score1 !== undefined && 
+                                      match.set1Score2 !== null && match.set1Score2 !== undefined) {
+                                    setScores.push(`${match.set1Score1}-${match.set1Score2}`);
+                                  }
+                                  if (match.set2Score1 !== null && match.set2Score1 !== undefined && 
+                                      match.set2Score2 !== null && match.set2Score2 !== undefined) {
+                                    setScores.push(`${match.set2Score1}-${match.set2Score2}`);
+                                  }
+                                  if (match.set3Score1 !== null && match.set3Score1 !== undefined && 
+                                      match.set3Score2 !== null && match.set3Score2 !== undefined) {
+                                    setScores.push(`${match.set3Score1}-${match.set3Score2}`);
+                                  }
+                                  const result = setScores.length > 0 ? setScores.join(' | ') : '0-0';
+                                  console.log('🏸 User page badminton set scores result:', result);
+                                  return result;
+                                })()}
+                              </div>
+                            </div>
+                          ) : null}
+                          
+                          {/* Futsal penalty scores display */}
+                          {match.competitionId === 'futsal' ? (
+                            <div className="text-center mb-2">
+                              <div className="text-sm font-semibold text-gray-600 mb-1">
+                                {match.currentPeriod || '1st Half'}
+                              </div>
+                              <div className="text-base sm:text-2xl font-bold text-gray-900 mb-1">
+                                {match.score1} - {match.score2}
+                              </div>
+                              {/* Show penalty scores only when period is PEN */}
+                              {match.currentPeriod === 'PEN' && (
+                                <div className="text-xs text-gray-600 font-semibold">
+                                  {(() => {
+                                    // Get penalty scores from set1 scores
+                                    const penalty1 = match.set1Score1 || 0;
+                                    const penalty2 = match.set1Score2 || 0;
+                                    return `Penalty: ${penalty1} - ${penalty2}`;
+                                  })()}
+                                </div>
+                              )}
+                            </div>
+                          ) : null}
+                          
+                          {/* Regular score display for non-volleyball, non-badminton, and non-futsal matches */}
+                          {match.competitionId !== 'volleyball' && match.competitionId !== 'badminton-putra' && match.competitionId !== 'badminton-putri' && match.competitionId !== 'badminton-mixed' && match.competitionId !== 'futsal' && (
+                            <div className="text-base sm:text-2xl font-bold text-gray-900">
+                              {match.score1} - {match.score2}
+                            </div>
+                          )}
                           {match.status === 'completed' && (
                             <div className="text-xs font-semibold text-black mt-1 flex items-center justify-center space-x-1">
                               <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.score1 > match.score2 ? match.faculty1.id : match.faculty2.id).split(' ')[0]}`}></div>

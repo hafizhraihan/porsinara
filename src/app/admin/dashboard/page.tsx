@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Save, Plus, Edit, Trash2, Trophy, Users, RotateCcw, RefreshCw, Shield, Download, ChevronDown, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { getFacultyColorClasses, getCompetitionIcon } from '@/lib/utils';
@@ -17,8 +17,14 @@ import {
   syncMedalTally,
   saveArtsCompetitionScores,
   getArtsCompetitionScores,
+  getPlayers,
+  getPlayersByFaculty,
+  getBasketballStats,
+  saveBasketballStats,
+  updateVolleyballSetScore,
+  getVolleyballSetScores,
   startPolling,
-  stopPolling
+  stopPolling,
 } from '@/lib/supabase-queries';
 
 interface Match {
@@ -35,6 +41,18 @@ interface Match {
   round?: string;
   notes?: string;
   youtubeStreamLink?: string;
+  currentPeriod?: string;
+  // Volleyball set scores
+  set1Score1?: number;
+  set1Score2?: number;
+  set2Score1?: number;
+  set2Score2?: number;
+  set3Score1?: number;
+  set3Score2?: number;
+  set4Score1?: number;
+  set4Score2?: number;
+  set5Score1?: number;
+  set5Score2?: number;
 }
 
 interface AdminUser {
@@ -74,6 +92,78 @@ export default function AdminPanel() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [sortBy, setSortBy] = useState<'date' | 'competition'>('date');
   const [showExportDropdown, setShowExportDropdown] = useState(false);
+
+  
+  // Basketball stats state
+  const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
+  const [team1Players, setTeam1Players] = useState<any[]>([]);
+  const [team2Players, setTeam2Players] = useState<any[]>([]);
+  const [playerStats, setPlayerStats] = useState<{[playerId: string]: any}>({});
+  const [manualScoreOverride, setManualScoreOverride] = useState<{[matchId: string]: boolean}>({});
+  const [selectedQuarter, setSelectedQuarter] = useState<string>('Q1');
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Volleyball set scores state
+  const [volleyballSetScores, setVolleyballSetScores] = useState<{
+    set1?: { team1: number; team2: number };
+    set2?: { team1: number; team2: number };
+    set3?: { team1: number; team2: number };
+    set4?: { team1: number; team2: number };
+    set5?: { team1: number; team2: number };
+  }>({});
+  const [currentSet, setCurrentSet] = useState<number>(1);
+  const [expandedVolleyballMatchId, setExpandedVolleyballMatchId] = useState<string | null>(null);
+  
+  // Badminton set scores state
+  const [badmintonSetScores, setBadmintonSetScores] = useState<{
+    set1?: { team1: number; team2: number };
+    set2?: { team1: number; team2: number };
+    set3?: { team1: number; team2: number };
+  }>({});
+  const [currentBadmintonSet, setCurrentBadmintonSet] = useState<number>(1);
+  const [expandedBadmintonMatchId, setExpandedBadmintonMatchId] = useState<string | null>(null);
+  
+  // Futsal penalty scores state
+  const [futsalPenaltyScores, setFutsalPenaltyScores] = useState<{ penalty1?: number; penalty2?: number }>({});
+  const [expandedFutsalMatchId, setExpandedFutsalMatchId] = useState<string | null>(null);
+  
+  
+  // Store currentSet in localStorage for persistence across sessions
+  const saveCurrentSetToStorage = (setNumber: number) => {
+    if (expandedVolleyballMatchId) {
+      localStorage.setItem(`volleyball_current_set_${expandedVolleyballMatchId}`, setNumber.toString());
+    }
+  };
+  
+  const loadCurrentSetFromStorage = (matchId: string) => {
+    const savedSet = localStorage.getItem(`volleyball_current_set_${matchId}`);
+    if (savedSet) {
+      const setNumber = parseInt(savedSet);
+      if (setNumber >= 1 && setNumber <= 5) {
+        setCurrentSet(setNumber);
+        return setNumber;
+      }
+    }
+    return 1;
+  };
+
+  // Function to save quarter to localStorage and sync to user page
+  const saveQuarterToStorage = (matchId: string, quarter: string) => {
+    try {
+      // Save quarter to localStorage
+      const quarters = JSON.parse(localStorage.getItem('matchQuarters') || '{}');
+      quarters[matchId] = quarter;
+      localStorage.setItem('matchQuarters', JSON.stringify(quarters));
+      console.log(`Quarter ${quarter} saved for match ${matchId} in localStorage`);
+    } catch (error) {
+      console.error('Error saving quarter to localStorage:', error);
+    }
+  };
+
+  // Debug manual score override state
+  useEffect(() => {
+    console.log('Manual score override state:', manualScoreOverride);
+  }, [manualScoreOverride]);
 
   // Export functions
   const exportToJSON = () => {
@@ -692,6 +782,7 @@ export default function AdminPanel() {
           console.log('Dashboard: Storage change detected, reloading user data');
           loadUserData();
         }
+        
       };
       
       window.addEventListener('storage', handleStorageChange);
@@ -770,6 +861,394 @@ export default function AdminPanel() {
     
     const allowedCompetitionIds = getUserCompetitionIds();
     return matches.filter(match => allowedCompetitionIds.includes(match.competitionId));
+  };
+
+
+
+  // Basketball stats functions
+  const toggleStatsExpand = async (matchId: string) => {
+    if (expandedMatchId === matchId) {
+      // Collapse
+      setExpandedMatchId(null);
+      setTeam1Players([]);
+      setTeam2Players([]);
+      setPlayerStats({});
+    } else {
+      // Expand - load both teams' players
+      setExpandedMatchId(matchId);
+      
+      const currentMatch = matches.find(m => m.id === matchId);
+      if (currentMatch) {
+        try {
+          // Load both teams' players in parallel
+          const [team1, team2, existingStats] = await Promise.all([
+            getPlayersByFaculty(currentMatch.faculty1Id),
+            getPlayersByFaculty(currentMatch.faculty2Id),
+            getBasketballStats(matchId)
+          ]);
+          
+          setTeam1Players(team1);
+          setTeam2Players(team2);
+          
+          // Initialize player stats with existing data or zeros
+          const initialStats: {[playerId: string]: any} = {};
+          
+          [...team1, ...team2].forEach(player => {
+            const existingStat = existingStats.find((s: any) => s.player_id === player.id);
+            initialStats[player.id] = existingStat || {
+              free_throw_made: 0,
+              free_throw_attempt: 0,
+              two_point_made: 0,
+              two_point_attempt: 0,
+              three_point_made: 0,
+              three_point_attempt: 0,
+              offensive_rebound: 0,
+              defensive_rebound: 0,
+              assists: 0,
+              steals: 0,
+              blocks: 0,
+              turnovers: 0,
+              fouls: 0,
+              minutes_played: 0,
+              is_starter: false
+            };
+          });
+          
+          setPlayerStats(initialStats);
+          
+          console.log('Loaded existing stats:', initialStats);
+          
+          // Calculate and update match score based on existing stats (hanya jika belum di-override manual)
+          if (!manualScoreOverride[matchId]) {
+            let team1Score = 0;
+            let team2Score = 0;
+            
+            team1.forEach(player => {
+              const stats = initialStats[player.id];
+              if (stats) {
+                team1Score += (stats.free_throw_made || 0) * 1 + 
+                             (stats.two_point_made || 0) * 2 + 
+                             (stats.three_point_made || 0) * 3;
+              }
+            });
+            
+            team2.forEach(player => {
+              const stats = initialStats[player.id];
+              if (stats) {
+                team2Score += (stats.free_throw_made || 0) * 1 + 
+                             (stats.two_point_made || 0) * 2 + 
+                             (stats.three_point_made || 0) * 3;
+              }
+            });
+            
+            // Update match score in matches state
+            setMatches(prevMatches => prevMatches.map(m => {
+              if (m.id === matchId) {
+                return {
+                  ...m,
+                  faculty1Score: team1Score,
+                  faculty2Score: team2Score
+                };
+              }
+              return m;
+            }));
+          }
+          
+        } catch (error: any) {
+          console.error('Error loading basketball stats:', error);
+          addToast({
+            type: 'error',
+            title: 'Error',
+            message: 'Failed to load players. Please try again.'
+          });
+          setExpandedMatchId(null);
+        }
+      }
+    }
+  };
+
+  // Check if match is a basketball match
+  const isBasketballMatch = (match: Match) => {
+    const competition = competitions.find(c => c.id === match.competitionId);
+    return competition?.name.toLowerCase().includes('basketball');
+  };
+
+  // Check if match is a volleyball match
+  const isVolleyballMatch = (match: Match) => {
+    return match.competitionId === 'volleyball';
+  };
+
+  // Check if match is a badminton match
+  const isBadmintonMatch = (match: Match) => {
+    return match.competitionId === 'badminton-putra' || match.competitionId === 'badminton-putri' || match.competitionId === 'badminton-mixed';
+  };
+
+  // Check if match is a futsal match
+  const isFutsalMatch = (match: Match) => {
+    return match.competitionId === 'futsal';
+  };
+
+
+  // Update player stat value with delayed auto-save
+  const updatePlayerStat = (playerId: string, field: string, value: number) => {
+    setPlayerStats(prev => {
+      const newStats = {
+        ...prev,
+        [playerId]: {
+          ...prev[playerId],
+          [field]: Math.max(0, value) // Ensure non-negative
+        }
+      };
+      
+      // Delay auto-save to allow all updates to complete
+      if (expandedMatchId) {
+        // Clear existing timeout
+        if (autoSaveTimeoutRef.current) {
+          clearTimeout(autoSaveTimeoutRef.current);
+        }
+        
+        // Set new timeout for auto-save
+        autoSaveTimeoutRef.current = setTimeout(async () => {
+          try {
+            console.log(`Delayed auto-saving stats for match ${expandedMatchId}`);
+            console.log('Current playerStats:', newStats);
+            
+            const statsToSave = Object.entries(newStats).map(([playerId, stats]) => ({
+              player_id: playerId,
+              ...stats
+            }));
+            
+            console.log('Stats to save:', statsToSave);
+            await saveBasketballStats(expandedMatchId, statsToSave);
+            console.log('Delayed auto-save successful');
+          } catch (error) {
+            console.error('Delayed auto-save failed:', error);
+            console.error('Error details:', JSON.stringify(error, null, 2));
+          }
+        }, 1000); // 1000ms delay (1 second)
+      }
+      
+      return newStats;
+    });
+  };
+
+  // Increment stat
+  const incrementStat = (playerId: string, field: string) => {
+    const currentValue = playerStats[playerId]?.[field] || 0;
+    updatePlayerStat(playerId, field, currentValue + 1);
+
+    // Jika field Successful, tambahkan juga Attempt
+    if (field === 'free_throw_made') {
+      const attemptValue = playerStats[playerId]?.free_throw_attempt || 0;
+      updatePlayerStat(playerId, 'free_throw_attempt', attemptValue + 1);
+    } else if (field === 'two_point_made') {
+      const attemptValue = playerStats[playerId]?.two_point_attempt || 0;
+      updatePlayerStat(playerId, 'two_point_attempt', attemptValue + 1);
+    } else if (field === 'three_point_made') {
+      const attemptValue = playerStats[playerId]?.three_point_attempt || 0;
+      updatePlayerStat(playerId, 'three_point_attempt', attemptValue + 1);
+    }
+
+    // Update match score berdasarkan Successful stats
+    if (field === 'free_throw_made' || field === 'two_point_made' || field === 'three_point_made') {
+      const pointsToAdd = field === 'free_throw_made' ? 1 : field === 'two_point_made' ? 2 : 3;
+      
+      // Cari player dan tentukan faculty-nya
+      const player = [...team1Players, ...team2Players].find(p => p.id === playerId);
+      if (player && expandedMatchId) {
+        const currentMatch = matches.find(m => m.id === expandedMatchId);
+        if (currentMatch) {
+          const isTeam1 = player.faculty_id === currentMatch.faculty1Id;
+          console.log('Auto-updating score for team:', isTeam1 ? 'team1' : 'team2', 'points:', pointsToAdd);
+          console.log('Current match score before update:', currentMatch.faculty1Score, '-', currentMatch.faculty2Score);
+          
+          // Reset manual override dan update score dalam satu operasi
+          setManualScoreOverride(prev => ({
+            ...prev,
+            [expandedMatchId]: false
+          }));
+        
+          // Update matches state
+          setMatches(prevMatches => prevMatches.map(m => {
+            if (m.id === expandedMatchId) {
+              const newScore1 = isTeam1 ? m.faculty1Score + pointsToAdd : m.faculty1Score;
+              const newScore2 = !isTeam1 ? m.faculty2Score + pointsToAdd : m.faculty2Score;
+              console.log('New score will be:', newScore1, '-', newScore2);
+              
+              // Save to database
+              updateMatchScore(expandedMatchId, newScore1, newScore2, 'live').catch(error => {
+                console.error('Error saving score to database:', error);
+              });
+              
+              return {
+                ...m,
+                faculty1Score: newScore1,
+                faculty2Score: newScore2
+              };
+            }
+            return m;
+          }));
+        }
+      }
+    }
+  };
+
+  // Decrement stat
+  const decrementStat = (playerId: string, field: string) => {
+    const currentValue = playerStats[playerId]?.[field] || 0;
+    if (currentValue <= 0) return; // Prevent negative values
+    
+    updatePlayerStat(playerId, field, currentValue - 1);
+
+    // Jika field Successful, kurangi juga Attempt
+    if (field === 'free_throw_made') {
+      const attemptValue = playerStats[playerId]?.free_throw_attempt || 0;
+      if (attemptValue > 0) updatePlayerStat(playerId, 'free_throw_attempt', attemptValue - 1);
+    } else if (field === 'two_point_made') {
+      const attemptValue = playerStats[playerId]?.two_point_attempt || 0;
+      if (attemptValue > 0) updatePlayerStat(playerId, 'two_point_attempt', attemptValue - 1);
+    } else if (field === 'three_point_made') {
+      const attemptValue = playerStats[playerId]?.three_point_attempt || 0;
+      if (attemptValue > 0) updatePlayerStat(playerId, 'three_point_attempt', attemptValue - 1);
+    }
+
+    // Update match score berdasarkan Successful stats (decrement)
+    if (field === 'free_throw_made' || field === 'two_point_made' || field === 'three_point_made') {
+      const pointsToSubtract = field === 'free_throw_made' ? 1 : field === 'two_point_made' ? 2 : 3;
+      
+      // Cari player dan tentukan faculty-nya
+      const player = [...team1Players, ...team2Players].find(p => p.id === playerId);
+      if (player && expandedMatchId) {
+        const currentMatch = matches.find(m => m.id === expandedMatchId);
+        if (currentMatch) {
+          const isTeam1 = player.faculty_id === currentMatch.faculty1Id;
+          console.log('Auto-updating score for team:', isTeam1 ? 'team1' : 'team2', 'points to subtract:', pointsToSubtract);
+          console.log('Current match score before update:', currentMatch.faculty1Score, '-', currentMatch.faculty2Score);
+          
+          // Reset manual override dan update score dalam satu operasi
+          setManualScoreOverride(prev => ({
+            ...prev,
+            [expandedMatchId]: false
+          }));
+        
+          // Update matches state
+          setMatches(prevMatches => prevMatches.map(m => {
+            if (m.id === expandedMatchId) {
+              const newScore1 = isTeam1 ? Math.max(0, m.faculty1Score - pointsToSubtract) : m.faculty1Score;
+              const newScore2 = !isTeam1 ? Math.max(0, m.faculty2Score - pointsToSubtract) : m.faculty2Score;
+              console.log('New score will be:', newScore1, '-', newScore2);
+              
+              // Save to database
+              updateMatchScore(expandedMatchId, newScore1, newScore2, 'live').catch(error => {
+                console.error('Error saving score to database:', error);
+              });
+              
+              return {
+                ...m,
+                faculty1Score: newScore1,
+                faculty2Score: newScore2
+              };
+            }
+            return m;
+          }));
+        }
+      }
+    }
+  };
+
+  // Calculate player totals
+  const calculatePlayerTotals = (playerId: string) => {
+    const stats = playerStats[playerId];
+    if (!stats) return { totalPoints: 0, totalRebound: 0 };
+    
+    const totalPoints = 
+      (stats.free_throw_made || 0) + 
+      ((stats.two_point_made || 0) * 2) + 
+      ((stats.three_point_made || 0) * 3);
+    
+    const totalRebound = (stats.offensive_rebound || 0) + (stats.defensive_rebound || 0);
+    
+    return { totalPoints, totalRebound };
+  };
+
+  // Save all basketball stats
+  const handleSaveAllBasketballStats = async () => {
+    if (!expandedMatchId) return;
+
+    // Validate all players' stats
+    for (const playerId in playerStats) {
+      const stats = playerStats[playerId];
+      
+      // Skip validation if player has no stats entered
+      const hasAnyStats = Object.values(stats).some((v: any) => typeof v === 'number' && v > 0);
+      if (!hasAnyStats) continue;
+      
+      // Validate shooting stats (made cannot exceed attempt)
+      if (stats.free_throw_made > stats.free_throw_attempt) {
+        addToast({
+          type: 'error',
+          title: 'Validation Error',
+          message: `Player has free throws made (${stats.free_throw_made}) > attempts (${stats.free_throw_attempt})`
+        });
+        return;
+      }
+
+      if (stats.two_point_made > stats.two_point_attempt) {
+        addToast({
+          type: 'error',
+          title: 'Validation Error',
+          message: `Player has 2-point made (${stats.two_point_made}) > attempts (${stats.two_point_attempt})`
+        });
+        return;
+      }
+
+      if (stats.three_point_made > stats.three_point_attempt) {
+        addToast({
+          type: 'error',
+          title: 'Validation Error',
+          message: `Player has 3-point made (${stats.three_point_made}) > attempts (${stats.three_point_attempt})`
+        });
+        return;
+      }
+    }
+
+    try {
+      // Prepare stats for all players who have any stats entered
+      const statsToSave = Object.entries(playerStats)
+        .filter(([playerId, stats]) => {
+          // Only save if player has any non-zero stats
+          return Object.entries(stats).some(([key, value]) => 
+            key !== 'is_starter' && typeof value === 'number' && value > 0
+          );
+        })
+        .map(([playerId, stats]) => ({
+          player_id: playerId,
+          ...stats
+        }));
+
+      if (statsToSave.length === 0) {
+        addToast({
+          type: 'warning',
+          title: 'No Stats',
+          message: 'Please enter stats for at least one player'
+        });
+        return;
+      }
+
+      await saveBasketballStats(expandedMatchId, statsToSave);
+      
+      addToast({
+        type: 'success',
+        title: 'Success',
+        message: `Stats saved for ${statsToSave.length} player(s)!`
+      });
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: 'Error',
+        message: error.message || 'Failed to save basketball stats'
+      });
+    }
   };
 
   // Sort matches by selected criteria
@@ -890,7 +1369,19 @@ export default function AdminPanel() {
             location: match.location ?? 'Main Field',
             round: match.round ?? 'Semifinal',
             notes: match.notes ?? '',
-            youtubeStreamLink: match.youtube_stream_link ?? ''
+            youtubeStreamLink: match.youtubeStreamLink ?? '',
+            currentPeriod: match.current_period ?? 'UPCOMING',
+            // Volleyball set scores
+            set1Score1: match.set1_score1,
+            set1Score2: match.set1_score2,
+            set2Score1: match.set2_score1,
+            set2Score2: match.set2_score2,
+            set3Score1: match.set3_score1,
+            set3Score2: match.set3_score2,
+            set4Score1: match.set4_score1,
+            set4Score2: match.set4_score2,
+            set5Score1: match.set5_score1,
+            set5Score2: match.set5_score2
           };
           
           console.log('Transformed result:', transformed);
@@ -928,6 +1419,7 @@ export default function AdminPanel() {
     const matchesPolling = startPolling(
       getMatches,
       (data) => {
+        console.log('🔄 Polling matches data:', data);
         const transformed = data.map((match: Record<string, any>) => ({
           id: match.id,
           competitionId: match.competition_id,
@@ -941,25 +1433,344 @@ export default function AdminPanel() {
           location: match.location ?? 'Main Field',
           round: match.round ?? 'Semifinal',
           notes: match.notes ?? '',
-          youtubeStreamLink: match.youtube_stream_link ?? ''
+          youtubeStreamLink: match.youtubeStreamLink ?? '',
+          currentPeriod: match.current_period ?? 'UPCOMING',
+          // Volleyball set scores
+          set1Score1: match.set1_score1,
+          set1Score2: match.set1_score2,
+          set2Score1: match.set2_score1,
+          set2Score2: match.set2_score2,
+          set3Score1: match.set3_score1,
+          set3Score2: match.set3_score2,
+          set4Score1: match.set4_score1,
+          set4Score2: match.set4_score2,
+          set5Score1: match.set5_score1,
+          set5Score2: match.set5_score2
         }));
         setMatches(transformed);
       },
       5000 // Poll every 5 seconds
     );
 
+    // Set up polling for basketball stats (real-time sync between admins)
+    const statsPolling = startPolling(
+      () => {
+        // Only fetch if expandedMatchId is valid
+        if (!expandedMatchId || expandedMatchId === '') {
+          console.log('Skipping stats polling - no expanded match');
+          return Promise.resolve([]);
+        }
+        return getBasketballStats(expandedMatchId);
+      },
+      (data) => {
+        if (expandedMatchId && data && data.length > 0) {
+          console.log('Real-time stats update received:', data);
+          // Convert database format to playerStats state format
+          const newPlayerStats: Record<string, any> = {};
+          data.forEach((stat: any) => {
+            newPlayerStats[stat.player_id] = {
+              free_throw_made: stat.free_throw_made || 0,
+              free_throw_attempt: stat.free_throw_attempt || 0,
+              two_point_made: stat.two_point_made || 0,
+              two_point_attempt: stat.two_point_attempt || 0,
+              three_point_made: stat.three_point_made || 0,
+              three_point_attempt: stat.three_point_attempt || 0,
+              offensive_rebound: stat.offensive_rebound || 0,
+              defensive_rebound: stat.defensive_rebound || 0,
+              assists: stat.assists || 0,
+              steals: stat.steals || 0,
+              blocks: stat.blocks || 0,
+              turnovers: stat.turnovers || 0,
+              fouls: stat.fouls || 0,
+              minutes_played: stat.minutes_played || 0,
+              is_starter: stat.is_starter || false
+            };
+          });
+          setPlayerStats(newPlayerStats);
+          console.log('Player stats updated from real-time sync:', newPlayerStats);
+        }
+      },
+      3000 // Poll every 3 seconds for faster sync
+    );
+
+    // Set up polling for volleyball set scores (real-time sync between admins)
+    const volleyballPolling = startPolling(
+      () => {
+        // Only fetch if expandedVolleyballMatchId is valid
+        if (!expandedVolleyballMatchId || expandedVolleyballMatchId === '') {
+          console.log('🏐 Skipping volleyball polling - no expanded volleyball match');
+          return Promise.resolve({});
+        }
+        console.log('🏐 Volleyball polling - expandedVolleyballMatchId:', expandedVolleyballMatchId);
+        return getVolleyballSetScores(expandedVolleyballMatchId);
+      },
+      (data) => {
+        if (expandedVolleyballMatchId && data) {
+          console.log('🏐 Real-time volleyball set scores update received:', data);
+          console.log('🏐 Current volleyballSetScores before update:', volleyballSetScores);
+          setVolleyballSetScores(data);
+          console.log('🏐 Volleyball set scores state updated');
+        }
+      },
+      3000 // Poll every 3 seconds for faster sync
+    );
+
+    // Set up polling for badminton set scores (real-time sync between admins)
+    const badmintonPolling = startPolling(
+      () => {
+        // Only fetch if expandedBadmintonMatchId is valid
+        if (!expandedBadmintonMatchId || expandedBadmintonMatchId === '') {
+          console.log('🏸 Skipping badminton polling - no expanded badminton match');
+          return Promise.resolve({});
+        }
+        console.log('🏸 Badminton polling - expandedBadmintonMatchId:', expandedBadmintonMatchId);
+        return getVolleyballSetScores(expandedBadmintonMatchId); // Reuse volleyball function
+      },
+      (data) => {
+        if (expandedBadmintonMatchId && data) {
+          console.log('🏸 Real-time badminton set scores update received:', data);
+          console.log('🏸 Current badmintonSetScores before update:', badmintonSetScores);
+          setBadmintonSetScores(data);
+          console.log('🏸 Badminton set scores state updated');
+        }
+      },
+      3000 // Poll every 3 seconds for faster sync
+    );
+
+    // Futsal penalty scores - no polling for now to avoid overriding user input
+    // Real-time sync will be handled by matches polling which updates the match data
+    const futsalPolling = null;
+
     return () => {
       stopPolling(matchesPolling);
+      stopPolling(statsPolling);
+      stopPolling(volleyballPolling);
+      stopPolling(badmintonPolling);
+      // futsalPolling is null, no need to stop
     };
-  }, []);
+  }, [expandedMatchId, expandedVolleyballMatchId, expandedBadmintonMatchId, expandedFutsalMatchId]); // Restart polling when expandedMatchId, expandedVolleyballMatchId, expandedBadmintonMatchId, or expandedFutsalMatchId changes
+
+  // Sync futsal penalty scores when matches data changes
+  useEffect(() => {
+    if (expandedFutsalMatchId) {
+      const currentMatch = matches.find(m => m.id === expandedFutsalMatchId);
+      if (currentMatch) {
+        const penalty1 = currentMatch.set1Score1 || 0;
+        const penalty2 = currentMatch.set1Score2 || 0;
+        setFutsalPenaltyScores({
+          penalty1,
+          penalty2
+        });
+        console.log('⚽ Futsal penalty scores synced from matches data:', {
+          penalty1,
+          penalty2
+        });
+      }
+    }
+  }, [matches, expandedFutsalMatchId]);
+
+  // Update current period (quarter/half/set)
+  const handlePeriodUpdate = async (matchId: string, period: string) => {
+    try {
+      await updateMatch(matchId, { current_period: period });
+      
+      // Update local state
+      setMatches(prev => prev.map(match => 
+        match.id === matchId 
+          ? { ...match, currentPeriod: period }
+          : match
+      ));
+      
+      console.log(`Updated period for match ${matchId} to ${period}`);
+    } catch (error) {
+      console.error('Error updating period:', error);
+      addToast({
+        type: 'error',
+        title: 'Update Failed',
+        message: 'Failed to update period. Please try again.',
+        duration: 4000
+      });
+    }
+  };
+
+  // Volleyball set score functions
+  const handleVolleyballSetScoreUpdate = async (matchId: string, setNumber: number, team1Score: number, team2Score: number) => {
+    try {
+      console.log(`🏐 Updating volleyball set ${setNumber} for match ${matchId}: ${team1Score}-${team2Score}`);
+      await updateVolleyballSetScore(matchId, setNumber, team1Score, team2Score);
+      
+      // Update local state
+      setVolleyballSetScores(prev => {
+        const newState = {
+          ...prev,
+          [`set${setNumber}`]: { team1: team1Score, team2: team2Score }
+        };
+        console.log('🏐 Updated local volleyballSetScores state:', newState);
+        return newState;
+      });
+      
+      console.log(`🏐 Updated volleyball set ${setNumber} score: ${team1Score}-${team2Score}`);
+    } catch (error) {
+      console.error('Error updating volleyball set score:', error);
+      addToast({
+        type: 'error',
+        title: 'Update Failed',
+        message: 'Failed to update set score. Please try again.',
+        duration: 4000
+      });
+    }
+  };
+
+  const loadVolleyballSetScores = async (matchId: string) => {
+    try {
+      const scores = await getVolleyballSetScores(matchId);
+      setVolleyballSetScores(scores);
+      console.log('Loaded volleyball set scores:', scores);
+    } catch (error) {
+      console.error('Error loading volleyball set scores:', error);
+    }
+  };
+
+  const toggleVolleyballExpand = (matchId: string) => {
+    if (expandedVolleyballMatchId === matchId) {
+      console.log('🏐 Closing volleyball expand for match:', matchId);
+      setExpandedVolleyballMatchId(null);
+    } else {
+      console.log('🏐 Opening volleyball expand for match:', matchId);
+      setExpandedVolleyballMatchId(matchId);
+      loadVolleyballSetScores(matchId);
+      // Load currentSet from localStorage
+      const savedSet = loadCurrentSetFromStorage(matchId);
+      console.log('🏐 Loaded currentSet from storage:', savedSet);
+    }
+  };
+
+  // Badminton set score functions
+  const handleBadmintonSetScoreUpdate = async (matchId: string, setNumber: number, team1Score: number, team2Score: number) => {
+    try {
+      console.log(`🏸 Updating badminton set ${setNumber} for match ${matchId}: ${team1Score}-${team2Score}`);
+      await updateVolleyballSetScore(matchId, setNumber, team1Score, team2Score); // Reuse volleyball function
+      
+      // Update local state
+      setBadmintonSetScores(prev => {
+        const newScores = { ...prev };
+        newScores[`set${setNumber}` as keyof typeof newScores] = { team1: team1Score, team2: team2Score };
+        return newScores;
+      });
+      
+      console.log('🏸 Badminton set scores updated locally');
+    } catch (error) {
+      console.error('Error updating badminton set score:', error);
+      addToast({
+        type: 'error',
+        title: 'Update Failed',
+        message: 'Error updating badminton set score'
+      });
+    }
+  };
+
+  const loadBadmintonSetScores = async (matchId: string) => {
+    try {
+      const scores = await getVolleyballSetScores(matchId); // Reuse volleyball function
+      setBadmintonSetScores(scores);
+      console.log('Loaded badminton set scores:', scores);
+    } catch (error) {
+      console.error('Error loading badminton set scores:', error);
+    }
+  };
+
+  const toggleBadmintonExpand = (matchId: string) => {
+    if (expandedBadmintonMatchId === matchId) {
+      console.log('🏸 Closing badminton expand for match:', matchId);
+      setExpandedBadmintonMatchId(null);
+    } else {
+      console.log('🏸 Opening badminton expand for match:', matchId);
+      setExpandedBadmintonMatchId(matchId);
+      loadBadmintonSetScores(matchId);
+      // Load currentSet from localStorage
+      const savedSet = loadCurrentSetFromStorage(matchId);
+      console.log('🏸 Loaded currentSet from storage:', savedSet);
+    }
+  };
+
+  // Futsal penalty score functions
+  const handleFutsalPenaltyScoreUpdate = async (matchId: string, penalty1: number, penalty2: number) => {
+    try {
+      console.log(`⚽ Updating futsal penalty scores for match ${matchId}: ${penalty1}-${penalty2}`);
+      // Store penalty scores in set1_score1 and set1_score2
+      await updateMatch(matchId, { 
+        set1_score1: penalty1, 
+        set1_score2: penalty2 
+      });
+      
+      // Update local state
+      setFutsalPenaltyScores({ penalty1, penalty2 });
+      
+      console.log('⚽ Futsal penalty scores updated in database');
+    } catch (error) {
+      console.error('Error updating futsal penalty scores:', error);
+      addToast({
+        type: 'error',
+        title: 'Update Failed',
+        message: 'Error updating futsal penalty scores'
+      });
+    }
+  };
+
+  const loadFutsalPenaltyScores = async (matchId: string) => {
+    try {
+      const currentMatch = matches.find(m => m.id === matchId);
+      if (currentMatch) {
+        const penalty1 = currentMatch.set1Score1 || 0;
+        const penalty2 = currentMatch.set1Score2 || 0;
+        setFutsalPenaltyScores({
+          penalty1,
+          penalty2
+        });
+        console.log('Loaded futsal penalty scores from database:', {
+          penalty1,
+          penalty2
+        });
+      } else {
+        setFutsalPenaltyScores({});
+      }
+    } catch (error) {
+      console.error('Error loading futsal penalty scores:', error);
+    }
+  };
+
+  const toggleFutsalExpand = (matchId: string) => {
+    if (expandedFutsalMatchId === matchId) {
+      console.log('⚽ Closing futsal expand for match:', matchId);
+      setExpandedFutsalMatchId(null);
+      setFutsalPenaltyScores({});
+    } else {
+      console.log('⚽ Opening futsal expand for match:', matchId);
+      setExpandedFutsalMatchId(matchId);
+      loadFutsalPenaltyScores(matchId);
+    }
+  };
 
   const handleScoreUpdate = async (matchId: string, faculty: 'faculty1' | 'faculty2', score: number) => {
     try {
-      const match = matches.find(m => m.id === matchId);
-      if (!match) return;
+      const currentMatch = matches.find(m => m.id === matchId);
+      if (!currentMatch) return;
 
-      const score1 = faculty === 'faculty1' ? score : match.faculty1Score;
-      const score2 = faculty === 'faculty2' ? score : match.faculty2Score;
+      const score1 = faculty === 'faculty1' ? score : currentMatch.faculty1Score;
+      const score2 = faculty === 'faculty2' ? score : currentMatch.faculty2Score;
+      
+      // Mark as manual override for basketball matches
+      if (isBasketballMatch(currentMatch)) {
+        console.log('Setting manual override for match:', matchId);
+        setManualScoreOverride(prev => {
+          const newState = {
+            ...prev,
+            [matchId]: true
+          };
+          console.log('New manual override state:', newState);
+          return newState;
+        });
+      }
       
       // Update in Supabase
       await updateMatchScore(matchId, score1, score2, 'live');
@@ -1013,7 +1824,7 @@ export default function AdminPanel() {
           location: matchData.location || 'Main Field',
           round: matchData.round || 'Regular',
           youtube_stream_link: matchData.youtubeStreamLink || ''
-        });
+        } as any);
         
         // Refresh matches from database after update
         const updatedMatches = await getMatches();
@@ -1052,7 +1863,7 @@ export default function AdminPanel() {
           round: matchData.round || 'Regular',
           status: supabaseStatus,
           youtube_stream_link: matchData.youtubeStreamLink || ''
-        };
+        } as any;
         
         console.log('Sending match data to createMatch:', matchDataToSend);
         
@@ -1442,7 +2253,8 @@ export default function AdminPanel() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {sortedMatches.map((match) => (
-                    <tr key={match.id}>
+                    <React.Fragment key={match.id}>
+                    <tr>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center space-x-2">
                           {(() => {
@@ -1586,6 +2398,81 @@ export default function AdminPanel() {
                               }}
                               className="text-blue-600 hover:text-blue-900"
                             >
+                              <ChevronDown className={`w-4 h-4 transition-transform ${expandedMatchId === match.id ? 'rotate-180' : ''}`} />
+                            </button>
+                          
+                          {/* Volleyball Set Scores Button */}
+                          {match.competitionId === 'volleyball' && (
+                            <button
+                              onClick={() => toggleVolleyballExpand(match.id)}
+                              className={`${expandedVolleyballMatchId === match.id ? 'text-green-600' : 'text-orange-600'} hover:text-orange-900`}
+                              title="Set Scores"
+                            >
+                              <ChevronDown className={`w-4 h-4 transition-transform ${expandedVolleyballMatchId === match.id ? 'rotate-180' : ''}`} />
+                            </button>
+                          )}
+                          
+                          {/* Badminton Set Scores Button */}
+                          {isBadmintonMatch(match) && (
+                            <button
+                              onClick={() => toggleBadmintonExpand(match.id)}
+                              className={`${expandedBadmintonMatchId === match.id ? 'text-green-600' : 'text-blue-600'} hover:text-blue-900`}
+                              title="Set Scores"
+                            >
+                              <ChevronDown className={`w-4 h-4 transition-transform ${expandedBadmintonMatchId === match.id ? 'rotate-180' : ''}`} />
+                            </button>
+                          )}
+                          
+                          {/* Futsal Penalty Scores Button */}
+                          {isFutsalMatch(match) && (
+                            <button
+                              onClick={() => toggleFutsalExpand(match.id)}
+                              className={`${expandedFutsalMatchId === match.id ? 'text-green-600' : 'text-green-600'} hover:text-green-900`}
+                              title="Penalty Scores"
+                            >
+                              <ChevronDown className={`w-4 h-4 transition-transform ${expandedFutsalMatchId === match.id ? 'rotate-180' : ''}`} />
+                            </button>
+                          )}
+                          
+                          
+                            <button
+                              onClick={() => {
+                                console.log('Edit button clicked for match:', match);
+                                console.log('Match keys:', Object.keys(match));
+                                console.log('Match date:', match.date);
+                                console.log('Match time:', match.time);
+                                console.log('Match location:', match.location);
+                                console.log('Match round:', match.round);
+                                console.log('All match properties:', {
+                                  id: match.id,
+                                  competitionId: match.competitionId,
+                                  faculty1Id: match.faculty1Id,
+                                  faculty2Id: match.faculty2Id,
+                                  faculty1Score: match.faculty1Score,
+                                  faculty2Score: match.faculty2Score,
+                                  status: match.status,
+                                  date: match.date,
+                                  time: match.time,
+                                  location: match.location,
+                                  round: match.round,
+                                  notes: match.notes
+                                });
+                                
+                                // Ensure editingMatch has all required fields with fallbacks
+                                const matchWithFallbacks = {
+                                  ...match,
+                                  date: match.date ?? new Date().toISOString().split('T')[0],
+                                  time: match.time ? match.time.substring(0, 5) : '09:00', // Convert HH:MM:SS to HH:MM
+                                  location: match.location ?? 'Main Field',
+                                  round: match.round ?? 'Semifinal',
+                                  notes: match.notes ?? ''
+                                };
+                                
+                                console.log('Match with fallbacks:', matchWithFallbacks);
+                                setEditingMatch(matchWithFallbacks);
+                              }}
+                              className="text-blue-600 hover:text-blue-900"
+                            >
                             <Edit className="w-4 h-4" />
                           </button>
                           {canDeleteMatch() && (
@@ -1599,6 +2486,658 @@ export default function AdminPanel() {
                         </div>
                       </td>
                     </tr>
+
+                    
+                    {/* Expandable Basketball Stats Row */}
+                    {isBasketballMatch(match) && expandedMatchId === match.id && (
+                      <tr>
+                        <td colSpan={8} className="px-6 py-6 bg-gray-50">
+                          <div className="w-full">
+                            <div className="flex items-center justify-between mb-4">
+                              <h4 className="text-lg font-semibold text-gray-900">🏀 Input Player Stats</h4>
+                              <div className="flex space-x-1">
+                                {(() => {
+                                  const currentMatch = matches.find(m => m.id === expandedMatchId);
+                                  return ['Q1', 'Q2', 'HT', 'Q3', 'Q4', 'FT', 'OT'].map((period) => (
+                                    <button
+                                      key={period}
+                                      onClick={() => {
+                                        if (expandedMatchId) {
+                                          handlePeriodUpdate(expandedMatchId, period);
+                                        }
+                                      }}
+                                      className={`px-3 py-1 text-sm font-medium rounded border transition-colors ${
+                                        currentMatch?.currentPeriod === period
+                                          ? 'bg-blue-500 text-white border-blue-500'
+                                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                      }`}
+                                    >
+                                      {period}
+                                    </button>
+                                  ));
+                                })()}
+                              </div>
+                            </div>
+                            
+                            {/* Stats Table */}
+                            <div className="overflow-x-auto">
+                              <table className="w-full border-collapse bg-white">
+                                <thead>
+                                  <tr className="bg-gray-100">
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900">Player</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-yellow-50" colSpan={2}>Free Throw</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-green-50" colSpan={2}>2PT</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-blue-50" colSpan={2}>3PT</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-purple-50" colSpan={2}>Rebound</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-pink-50">Assists</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-gray-50">Turnovers</th>
+                                  </tr>
+                                  <tr className="bg-gray-50">
+                                    <th className="border px-1 py-1 text-xs text-gray-600"></th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-yellow-50">Attempt</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-yellow-50">Successful</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-green-50">Attempt</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-green-50">Successful</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-blue-50">Attempt</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-blue-50">Successful</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-purple-50">Offensive</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-purple-50">Defensive</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-pink-50"></th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-gray-50"></th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {/* Team 1 Players */}
+                                  <tr>
+                                    <td 
+                                      colSpan={11} 
+                                      className={`border px-2 py-1 text-sm font-semibold text-white ${getFacultyColorClasses(match.faculty1Id).split(' ')[0]}`}
+                                    >
+                                      {faculties.find(f => f.id === match.faculty1Id)?.name || 'Team 1'} ({team1Players.length} players)
+                                    </td>
+                                  </tr>
+                                  {team1Players.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={11} className="border px-2 py-2 text-xs text-gray-500 text-center">
+                                        No players found for this faculty
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    team1Players.map(player => {
+                                      const stats = playerStats[player.id] || {};
+                                      const totals = calculatePlayerTotals(player.id);
+                                      
+                                      return (
+                                        <tr key={player.id} className="hover:bg-blue-50">
+                                          <td className="border px-2 py-2 text-xs text-gray-900">
+                                            <div className="font-medium">{player.name}</div>
+                                            <div className="text-gray-600">#{player.jersey_number}</div>
+                                          </td>
+                                          
+                                          {/* Free Throws */}
+                                          <td className="border px-1 py-1 bg-yellow-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'free_throw_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.free_throw_attempt || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'free_throw_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-1 py-1 bg-yellow-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'free_throw_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.free_throw_made || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'free_throw_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* 2-Point */}
+                                          <td className="border px-1 py-1 bg-green-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'two_point_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.two_point_attempt || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'two_point_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-1 py-1 bg-green-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'two_point_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.two_point_made || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'two_point_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* 3-Point */}
+                                          <td className="border px-1 py-1 bg-blue-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'three_point_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.three_point_attempt || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'three_point_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-1 py-1 bg-blue-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'three_point_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.three_point_made || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'three_point_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Rebounds */}
+                                          <td className="border px-1 py-1 bg-purple-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'offensive_rebound')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.offensive_rebound || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'offensive_rebound')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-1 py-1 bg-purple-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'defensive_rebound')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.defensive_rebound || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'defensive_rebound')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Assists */}
+                                          <td className="border px-1 py-1 bg-pink-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'assists')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.assists || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'assists')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-1 py-1 bg-gray-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'turnovers')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.turnovers || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'turnovers')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })
+                                  )}
+                                  
+                                  {/* Team 2 Players */}
+                                  <tr>
+                                    <td 
+                                      colSpan={11} 
+                                      className={`border px-2 py-1 text-sm font-semibold text-white ${getFacultyColorClasses(match.faculty2Id).split(' ')[0]}`}
+                                    >
+                                      {faculties.find(f => f.id === match.faculty2Id)?.name || 'Team 2'} ({team2Players.length} players)
+                                    </td>
+                                  </tr>
+                                  {team2Players.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={11} className="border px-2 py-2 text-xs text-gray-500 text-center">
+                                        No players found for this faculty
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    team2Players.map(player => {
+                                      const stats = playerStats[player.id] || {};
+                                      const totals = calculatePlayerTotals(player.id);
+                                      
+                                      return (
+                                        <tr key={player.id} className="hover:bg-green-50">
+                                          <td className="border px-2 py-2 text-xs text-gray-900">
+                                            <div className="font-medium">{player.name}</div>
+                                            <div className="text-gray-600">#{player.jersey_number}</div>
+                                          </td>
+                                          
+                                          {/* Free Throws */}
+                                          <td className="border px-1 py-1 bg-yellow-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'free_throw_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.free_throw_attempt || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'free_throw_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-1 py-1 bg-yellow-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'free_throw_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.free_throw_made || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'free_throw_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* 2-Point */}
+                                          <td className="border px-1 py-1 bg-green-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'two_point_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.two_point_attempt || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'two_point_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-1 py-1 bg-green-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'two_point_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.two_point_made || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'two_point_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* 3-Point */}
+                                          <td className="border px-1 py-1 bg-blue-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'three_point_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.three_point_attempt || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'three_point_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-1 py-1 bg-blue-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'three_point_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.three_point_made || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'three_point_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Rebounds */}
+                                          <td className="border px-1 py-1 bg-purple-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'offensive_rebound')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.offensive_rebound || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'offensive_rebound')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-1 py-1 bg-purple-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'defensive_rebound')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.defensive_rebound || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'defensive_rebound')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Assists */}
+                                          <td className="border px-1 py-1 bg-pink-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'assists')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.assists || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'assists')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-1 py-1 bg-gray-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementStat(player.id, 'turnovers')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.turnovers || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'turnovers')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex justify-end gap-2 mt-4">
+                              <button
+                                onClick={handleSaveAllBasketballStats}
+                                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm font-medium"
+                              >
+                                💾 Save All Stats
+                              </button>
+                              <button
+                                onClick={() => toggleStatsExpand(match.id)}
+                                className="px-4 py-2 border rounded-lg hover:bg-gray-100 text-sm font-medium text-gray-900"
+                              >
+                                Close
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    
+                    {/* Expandable Volleyball Set Scores Row */}
+                    {match.competitionId === 'volleyball' && expandedVolleyballMatchId === match.id && (
+                      <tr>
+                        <td colSpan={8} className="px-6 py-6 bg-gray-50">
+                          <div className="w-full">
+                            <div className="flex items-center justify-between mb-4">
+                              <h4 className="text-lg font-semibold text-gray-900">🏐 Volleyball Set Scores</h4>
+                              <div className="flex space-x-1">
+                                {[1, 2, 3, 4, 5].map((setNumber) => (
+                                  <button
+                                    key={setNumber}
+                                    onClick={() => {
+                                      setCurrentSet(setNumber);
+                                      saveCurrentSetToStorage(setNumber);
+                                      
+                                      // Update currentPeriod in database
+                                      if (expandedVolleyballMatchId) {
+                                        const period = `Set ${setNumber}`;
+                                        handlePeriodUpdate(expandedVolleyballMatchId, period);
+                                        console.log('🏐 Updated currentPeriod to:', period);
+                                      }
+                                      
+                                      if (expandedVolleyballMatchId) {
+                                        loadVolleyballSetScores(expandedVolleyballMatchId);
+                                      }
+                                    }}
+                                    className={`px-3 py-1 text-sm font-medium rounded border transition-colors ${
+                                      currentSet === setNumber
+                                        ? 'bg-blue-500 text-white border-blue-500'
+                                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                    }`}
+                                  >
+                                    Set {setNumber}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            
+                            {/* Set Score Input */}
+                            <div className="bg-white p-4 rounded-lg border">
+                              <div className="flex items-center justify-center space-x-4">
+                                <div className="text-center">
+                                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-center space-x-2">
+                                    <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty1Id).split(' ')[0]}`}></div>
+                                    <span>{faculties.find(f => f.id === match.faculty1Id)?.short_name || 'Team 1'}</span>
+                                  </label>
+                                  <div className="flex items-center justify-center">
+                                    <input
+                                      type="number"
+                                      value={(volleyballSetScores as any)[`set${currentSet}`]?.team1 || 0}
+                                      onChange={(e) => {
+                                        const newScore = parseInt(e.target.value) || 0;
+                                        handleVolleyballSetScoreUpdate(
+                                          match.id,
+                                          currentSet,
+                                          newScore,
+                                          (volleyballSetScores as any)[`set${currentSet}`]?.team2 || 0
+                                        );
+                                      }}
+                                      className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm text-gray-900"
+                                      min="0"
+                                    />
+                                  </div>
+                                </div>
+                                
+                                <div className="text-2xl font-bold text-gray-500">-</div>
+                                
+                                <div className="text-center">
+                                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-center space-x-2">
+                                    <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty2Id).split(' ')[0]}`}></div>
+                                    <span>{faculties.find(f => f.id === match.faculty2Id)?.short_name || 'Team 2'}</span>
+                                  </label>
+                                  <div className="flex items-center justify-center">
+                                    <input
+                                      type="number"
+                                      value={(volleyballSetScores as any)[`set${currentSet}`]?.team2 || 0}
+                                      onChange={(e) => {
+                                        const newScore = parseInt(e.target.value) || 0;
+                                        handleVolleyballSetScoreUpdate(
+                                          match.id,
+                                          currentSet,
+                                          (volleyballSetScores as any)[`set${currentSet}`]?.team1 || 0,
+                                          newScore
+                                        );
+                                      }}
+                                      className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm text-gray-900"
+                                      min="0"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <div className="flex justify-end gap-2 mt-4">
+                              <button
+                                onClick={() => toggleVolleyballExpand(match.id)}
+                                className="px-4 py-2 border rounded-lg hover:bg-gray-100 text-sm font-medium text-gray-900"
+                              >
+                                Close
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    
+                    {/* Expandable Badminton Set Scores Row */}
+                    {isBadmintonMatch(match) && expandedBadmintonMatchId === match.id && (
+                      <tr>
+                        <td colSpan={8} className="px-6 py-6 bg-gray-50">
+                          <div className="w-full">
+                            <div className="flex items-center justify-between mb-4">
+                              <h4 className="text-lg font-semibold text-gray-900">🏸 Badminton Set Scores</h4>
+                              <div className="flex space-x-1">
+                                {[1, 2, 3].map((setNumber) => (
+                                  <button
+                                    key={setNumber}
+                                    onClick={() => {
+                                      setCurrentBadmintonSet(setNumber);
+                                      saveCurrentSetToStorage(setNumber);
+                                      
+                                      // Update currentPeriod in database
+                                      if (expandedBadmintonMatchId) {
+                                        const period = `Set ${setNumber}`;
+                                        handlePeriodUpdate(expandedBadmintonMatchId, period);
+                                        console.log('🏸 Updated currentPeriod to:', period);
+                                      }
+                                      
+                                      if (expandedBadmintonMatchId) {
+                                        loadBadmintonSetScores(expandedBadmintonMatchId);
+                                      }
+                                    }}
+                                    className={`px-3 py-1 text-sm font-medium rounded border transition-colors ${
+                                      currentBadmintonSet === setNumber
+                                        ? 'bg-blue-500 text-white border-blue-500'
+                                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                    }`}
+                                  >
+                                    Set {setNumber}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            
+                            {/* Set Score Input */}
+                            <div className="bg-white p-4 rounded-lg border">
+                              <div className="flex items-center justify-center space-x-4">
+                                <div className="text-center">
+                                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-center space-x-2">
+                                    <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty1Id).split(' ')[0]}`}></div>
+                                    <span>{faculties.find(f => f.id === match.faculty1Id)?.short_name || 'Team 1'}</span>
+                                  </label>
+                                  <div className="flex items-center justify-center">
+                                    <input
+                                      type="number"
+                                      value={(badmintonSetScores as any)[`set${currentBadmintonSet}`]?.team1 || 0}
+                                      onChange={(e) => {
+                                        const newScore = parseInt(e.target.value) || 0;
+                                        handleBadmintonSetScoreUpdate(
+                                          match.id,
+                                          currentBadmintonSet,
+                                          newScore,
+                                          (badmintonSetScores as any)[`set${currentBadmintonSet}`]?.team2 || 0
+                                        );
+                                      }}
+                                      className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm text-gray-900"
+                                      min="0"
+                                    />
+                                  </div>
+                                </div>
+                                
+                                <div className="text-2xl font-bold text-gray-500">-</div>
+                                
+                                <div className="text-center">
+                                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-center space-x-2">
+                                    <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty2Id).split(' ')[0]}`}></div>
+                                    <span>{faculties.find(f => f.id === match.faculty2Id)?.short_name || 'Team 2'}</span>
+                                  </label>
+                                  <div className="flex items-center justify-center">
+                                    <input
+                                      type="number"
+                                      value={(badmintonSetScores as any)[`set${currentBadmintonSet}`]?.team2 || 0}
+                                      onChange={(e) => {
+                                        const newScore = parseInt(e.target.value) || 0;
+                                        handleBadmintonSetScoreUpdate(
+                                          match.id,
+                                          currentBadmintonSet,
+                                          (badmintonSetScores as any)[`set${currentBadmintonSet}`]?.team1 || 0,
+                                          newScore
+                                        );
+                                      }}
+                                      className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm text-gray-900"
+                                      min="0"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <div className="flex justify-end gap-2 mt-4">
+                              <button
+                                onClick={() => toggleBadmintonExpand(match.id)}
+                                className="px-4 py-2 border rounded-lg hover:bg-gray-100 text-sm font-medium text-gray-900"
+                              >
+                                Close
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    
+                    {/* Expandable Futsal Penalty Scores Row */}
+                    {isFutsalMatch(match) && expandedFutsalMatchId === match.id && (
+                      <tr>
+                        <td colSpan={8} className="px-6 py-6 bg-gray-50">
+                          <div className="w-full">
+                            <div className="flex items-center justify-between mb-4">
+                              <h4 className="text-lg font-semibold text-gray-900">⚽ Futsal Penalty Scores</h4>
+                              <div className="flex space-x-1">
+                                {['1st Half', 'HT', '2nd Half', 'ET1', 'ET2', 'FT', 'PEN'].map((period) => (
+                                  <button
+                                    key={period}
+                                    onClick={() => {
+                                      handlePeriodUpdate(match.id, period);
+                                      console.log('⚽ Updated currentPeriod to:', period);
+                                    }}
+                                    className={`px-3 py-1 text-sm font-medium rounded border transition-colors ${
+                                      match.currentPeriod === period
+                                        ? 'bg-green-500 text-white border-green-500'
+                                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                    }`}
+                                  >
+                                    {period}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            
+                            {/* Main Score Input - Only show when period is NOT PEN */}
+                            {match.currentPeriod !== 'PEN' && (
+                              <div className="bg-white p-4 rounded-lg border mb-4">
+                                <div className="flex items-center justify-center space-x-4">
+                                  <div className="text-center">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-center space-x-2">
+                                      <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty1Id).split(' ')[0]}`}></div>
+                                      <span>{faculties.find(f => f.id === match.faculty1Id)?.short_name || 'Team 1'}</span>
+                                    </label>
+                                    <div className="flex items-center justify-center">
+                                      <input
+                                        type="number"
+                                        value={match.faculty1Score}
+                                        onChange={(e) => handleScoreUpdate(match.id, 'faculty1', parseInt(e.target.value) || 0)}
+                                        className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm text-gray-900"
+                                        min="0"
+                                      />
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="text-2xl font-bold text-gray-500">-</div>
+                                  
+                                  <div className="text-center">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-center space-x-2">
+                                      <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty2Id).split(' ')[0]}`}></div>
+                                      <span>{faculties.find(f => f.id === match.faculty2Id)?.short_name || 'Team 2'}</span>
+                                    </label>
+                                    <div className="flex items-center justify-center">
+                                      <input
+                                        type="number"
+                                        value={match.faculty2Score}
+                                        onChange={(e) => handleScoreUpdate(match.id, 'faculty2', parseInt(e.target.value) || 0)}
+                                        className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm text-gray-900"
+                                        min="0"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* Penalty Score Input - Only show when period is PEN */}
+                            {match.currentPeriod === 'PEN' && (
+                              <div className="bg-yellow-50 p-4 rounded-lg border">
+                                <div className="text-center mb-2">
+                                  <h5 className="text-sm font-semibold text-gray-700">Penalty Shootout Scores</h5>
+                                </div>
+                                <div className="flex items-center justify-center space-x-4">
+                                  <div className="text-center">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-center space-x-2">
+                                      <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty1Id).split(' ')[0]}`}></div>
+                                      <span>{faculties.find(f => f.id === match.faculty1Id)?.short_name || 'Team 1'}</span>
+                                    </label>
+                                    <div className="flex items-center justify-center">
+                                      <input
+                                        type="number"
+                                        value={futsalPenaltyScores.penalty1 || 0}
+                                        onChange={(e) => {
+                                          const penalty1 = parseInt(e.target.value) || 0;
+                                          const penalty2 = futsalPenaltyScores.penalty2 || 0;
+                                          handleFutsalPenaltyScoreUpdate(match.id, penalty1, penalty2);
+                                        }}
+                                        className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm text-gray-900"
+                                        min="0"
+                                      />
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="text-2xl font-bold text-gray-500">-</div>
+                                  
+                                  <div className="text-center">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-center space-x-2">
+                                      <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty2Id).split(' ')[0]}`}></div>
+                                      <span>{faculties.find(f => f.id === match.faculty2Id)?.short_name || 'Team 2'}</span>
+                                    </label>
+                                    <div className="flex items-center justify-center">
+                                      <input
+                                        type="number"
+                                        value={futsalPenaltyScores.penalty2 || 0}
+                                        onChange={(e) => {
+                                          const penalty1 = futsalPenaltyScores.penalty1 || 0;
+                                          const penalty2 = parseInt(e.target.value) || 0;
+                                          handleFutsalPenaltyScoreUpdate(match.id, penalty1, penalty2);
+                                        }}
+                                        className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm text-gray-900"
+                                        min="0"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            
+                            <div className="flex justify-end gap-2 mt-4">
+                              <button
+                                onClick={() => toggleFutsalExpand(match.id)}
+                                className="px-4 py-2 border rounded-lg hover:bg-gray-100 text-sm font-medium text-gray-900"
+                              >
+                                Close
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
@@ -1651,7 +3190,7 @@ export default function AdminPanel() {
                     location: formData.get('location') as string,
                     round: formData.get('round') as string,
                     youtube_stream_link: formData.get('youtubeStreamLink') as string
-                  });
+                  } as any);
                 
                 // Refresh matches
                 const updatedMatches = await getMatches();
@@ -1672,8 +3211,9 @@ export default function AdminPanel() {
                 setMatches(transformedMatches);
                 setEditingMatch(null);
               } else {
-                // Handle regular match saving
-                handleSaveMatch({
+                try {
+                  // Handle regular match saving
+                  handleSaveMatch({
                   competitionId: competitionId,
                   faculty1Id: formData.get('faculty1') as string,
                   faculty2Id: isArtCompetition ? formData.get('faculty1') as string : formData.get('faculty2') as string,
@@ -1694,10 +3234,14 @@ export default function AdminPanel() {
                   round: formData.get('round') as string,
                   notes: formData.get('notes') as string,
                   youtubeStreamLink: formData.get('youtubeStreamLink') as string
-                });
-              }
+                  });
+                  } catch (error) {
+                    console.error('Error saving match:', error);
+                    alert('Error saving match. Check console for details.');
+                  }
+                }
               } catch (error) {
-                console.error('Error saving match:', error);
+                console.error('Error in form submission:', error);
                 alert('Error saving match. Check console for details.');
               }
             }}>

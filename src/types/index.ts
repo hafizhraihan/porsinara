@@ -31,6 +31,18 @@ export interface Match {
   location?: string;
   round?: string;
   youtubeStreamLink?: string;
+  currentPeriod?: string;
+  // Volleyball set scores
+  set1Score1?: number;
+  set1Score2?: number;
+  set2Score1?: number;
+  set2Score2?: number;
+  set3Score1?: number;
+  set3Score2?: number;
+  set4Score1?: number;
+  set4Score2?: number;
+  set5Score1?: number;
+  set5Score2?: number;
 }
 
 export interface Score {

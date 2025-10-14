@@ -2360,46 +2360,15 @@ export default function AdminPanel() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex space-x-2">
+                          {isBasketballMatch(match) && (
                             <button
-                              onClick={() => {
-                                console.log('Edit button clicked for match:', match);
-                                console.log('Match keys:', Object.keys(match));
-                                console.log('Match date:', match.date);
-                                console.log('Match time:', match.time);
-                                console.log('Match location:', match.location);
-                                console.log('Match round:', match.round);
-                                console.log('All match properties:', {
-                                  id: match.id,
-                                  competitionId: match.competitionId,
-                                  faculty1Id: match.faculty1Id,
-                                  faculty2Id: match.faculty2Id,
-                                  faculty1Score: match.faculty1Score,
-                                  faculty2Score: match.faculty2Score,
-                                  status: match.status,
-                                  date: match.date,
-                                  time: match.time,
-                                  location: match.location,
-                                  round: match.round,
-                                  notes: match.notes
-                                });
-                                
-                                // Ensure editingMatch has all required fields with fallbacks
-                                const matchWithFallbacks = {
-                                  ...match,
-                                  date: match.date ?? new Date().toISOString().split('T')[0],
-                                  time: match.time ? match.time.substring(0, 5) : '09:00', // Convert HH:MM:SS to HH:MM
-                                  location: match.location ?? 'Main Field',
-                                  round: match.round ?? 'Semifinal',
-                                  notes: match.notes ?? ''
-                                };
-                                
-                                console.log('Match with fallbacks:', matchWithFallbacks);
-                                setEditingMatch(matchWithFallbacks);
-                              }}
+                              onClick={() => toggleStatsExpand(match.id)}
                               className="text-blue-600 hover:text-blue-900"
+                              title="Player Stats"
                             >
                               <ChevronDown className={`w-4 h-4 transition-transform ${expandedMatchId === match.id ? 'rotate-180' : ''}`} />
                             </button>
+                          )}
                           
                           {/* Volleyball Set Scores Button */}
                           {match.competitionId === 'volleyball' && (

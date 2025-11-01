@@ -841,129 +841,123 @@ export default function Home() {
                             </div>
                           ) : null}
                           
-                          {/* Volleyball set scores display */}
-                          {match.competitionId === 'volleyball' ? (
-                            <div className="text-center mb-2">
-                              <div className="text-sm font-semibold text-gray-600 mb-1">
-                                {match.currentPeriod || 'Set 1'}
-                              </div>
-                              <div className="text-base sm:text-2xl font-bold text-gray-900 mb-1">
-                                {match.score1} - {match.score2}
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                {(() => {
-                                  console.log('🏐 User page volleyball match set scores:', {
-                                    matchId: match.id,
-                                    set1Score1: match.set1Score1,
-                                    set1Score2: match.set1Score2,
-                                    set2Score1: match.set2Score1,
-                                    set2Score2: match.set2Score2,
-                                    set3Score1: match.set3Score1,
-                                    set3Score2: match.set3Score2,
-                                    set4Score1: match.set4Score1,
-                                    set4Score2: match.set4Score2,
-                                    set5Score1: match.set5Score1,
-                                    set5Score2: match.set5Score2
-                                  });
-                                  const setScores = [];
-                                  if (match.set1Score1 !== null && match.set1Score1 !== undefined && 
-                                      match.set1Score2 !== null && match.set1Score2 !== undefined) {
-                                    setScores.push(`${match.set1Score1}-${match.set1Score2}`);
-                                  }
-                                  if (match.set2Score1 !== null && match.set2Score1 !== undefined && 
-                                      match.set2Score2 !== null && match.set2Score2 !== undefined) {
-                                    setScores.push(`${match.set2Score1}-${match.set2Score2}`);
-                                  }
-                                  if (match.set3Score1 !== null && match.set3Score1 !== undefined && 
-                                      match.set3Score2 !== null && match.set3Score2 !== undefined) {
-                                    setScores.push(`${match.set3Score1}-${match.set3Score2}`);
-                                  }
-                                  if (match.set4Score1 !== null && match.set4Score1 !== undefined && 
-                                      match.set4Score2 !== null && match.set4Score2 !== undefined) {
-                                    setScores.push(`${match.set4Score1}-${match.set4Score2}`);
-                                  }
-                                  if (match.set5Score1 !== null && match.set5Score1 !== undefined && 
-                                      match.set5Score2 !== null && match.set5Score2 !== undefined) {
-                                    setScores.push(`${match.set5Score1}-${match.set5Score2}`);
-                                  }
-                                  const result = setScores.length > 0 ? setScores.join(' | ') : '0-0';
-                                  console.log('🏐 User page set scores result:', result);
-                                  return result;
-                                })()}
-                              </div>
-                            </div>
-                          ) : null}
-                          
-                          {/* Badminton set scores display */}
-                          {(match.competitionId === 'badminton-putra' || match.competitionId === 'badminton-putri' || match.competitionId === 'badminton-mixed') ? (
-                            <div className="text-center mb-2">
-                              <div className="text-sm font-semibold text-gray-600 mb-1">
-                                {match.currentPeriod || 'Set 1'}
-                              </div>
-                              <div className="text-base sm:text-2xl font-bold text-gray-900 mb-1">
-                                {match.score1} - {match.score2}
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                {(() => {
-                                  console.log('🏸 User page badminton match set scores:', {
-                                    matchId: match.id,
-                                    set1Score1: match.set1Score1,
-                                    set1Score2: match.set1Score2,
-                                    set2Score1: match.set2Score1,
-                                    set2Score2: match.set2Score2,
-                                    set3Score1: match.set3Score1,
-                                    set3Score2: match.set3Score2
-                                  });
-                                  const setScores = [];
-                                  if (match.set1Score1 !== null && match.set1Score1 !== undefined && 
-                                      match.set1Score2 !== null && match.set1Score2 !== undefined) {
-                                    setScores.push(`${match.set1Score1}-${match.set1Score2}`);
-                                  }
-                                  if (match.set2Score1 !== null && match.set2Score1 !== undefined && 
-                                      match.set2Score2 !== null && match.set2Score2 !== undefined) {
-                                    setScores.push(`${match.set2Score1}-${match.set2Score2}`);
-                                  }
-                                  if (match.set3Score1 !== null && match.set3Score1 !== undefined && 
-                                      match.set3Score2 !== null && match.set3Score2 !== undefined) {
-                                    setScores.push(`${match.set3Score1}-${match.set3Score2}`);
-                                  }
-                                  const result = setScores.length > 0 ? setScores.join(' | ') : '0-0';
-                                  console.log('🏸 User page badminton set scores result:', result);
-                                  return result;
-                                })()}
-                              </div>
-                            </div>
-                          ) : null}
-                          
-                          {/* Futsal penalty scores display */}
-                          {match.competitionId === 'futsal' ? (
-                            <div className="text-center mb-2">
-                              <div className="text-sm font-semibold text-gray-600 mb-1">
-                                {match.currentPeriod || '1st Half'}
-                              </div>
-                              <div className="text-base sm:text-2xl font-bold text-gray-900 mb-1">
-                                {match.score1} - {match.score2}
-                              </div>
-                              {/* Show penalty scores only when period is PEN */}
-                              {match.currentPeriod === 'PEN' && (
-                                <div className="text-xs text-gray-600 font-semibold">
-                                  {(() => {
-                                    // Get penalty scores from set1 scores
-                                    const penalty1 = match.set1Score1 || 0;
-                                    const penalty2 = match.set1Score2 || 0;
-                                    return `Penalty: ${penalty1} - ${penalty2}`;
-                                  })()}
-                                </div>
-                              )}
-                            </div>
-                          ) : null}
-                          
-                          {/* Regular score display for non-volleyball, non-badminton, and non-futsal matches */}
-                          {match.competitionId !== 'volleyball' && match.competitionId !== 'badminton-putra' && match.competitionId !== 'badminton-putri' && match.competitionId !== 'badminton-mixed' && match.competitionId !== 'futsal' && (
-                            <div className="text-base sm:text-2xl font-bold text-gray-900">
-                              {match.score1} - {match.score2}
+                          {/* Volleyball: Period indicator */}
+                          {match.competitionId === 'volleyball' && (
+                            <div className="text-sm font-semibold text-gray-600 mb-1">
+                              {match.currentPeriod || 'Set 1'}
                             </div>
                           )}
+                          
+                          {/* Badminton: Period indicator */}
+                          {(match.competitionId === 'badminton-putra' || match.competitionId === 'badminton-putri' || match.competitionId === 'badminton-mixed') && (
+                            <div className="text-sm font-semibold text-gray-600 mb-1">
+                              {match.currentPeriod || 'Set 1'}
+                            </div>
+                          )}
+                          
+                          {/* Futsal: Period indicator */}
+                          {match.competitionId === 'futsal' && (
+                            <div className="text-sm font-semibold text-gray-600 mb-1">
+                              {match.currentPeriod || '1st Half'}
+                            </div>
+                          )}
+                          
+                          {/* Main score display for all matches */}
+                          <div className="text-base sm:text-2xl font-bold text-gray-900">
+                            {match.score1} - {match.score2}
+                          </div>
+                          
+                          {/* Volleyball: Set scores below main score */}
+                          {match.competitionId === 'volleyball' && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              {(() => {
+                                console.log('🏐 User page volleyball match set scores:', {
+                                  matchId: match.id,
+                                  set1Score1: match.set1Score1,
+                                  set1Score2: match.set1Score2,
+                                  set2Score1: match.set2Score1,
+                                  set2Score2: match.set2Score2,
+                                  set3Score1: match.set3Score1,
+                                  set3Score2: match.set3Score2,
+                                  set4Score1: match.set4Score1,
+                                  set4Score2: match.set4Score2,
+                                  set5Score1: match.set5Score1,
+                                  set5Score2: match.set5Score2
+                                });
+                                const setScores = [];
+                                if (match.set1Score1 !== null && match.set1Score1 !== undefined && 
+                                    match.set1Score2 !== null && match.set1Score2 !== undefined) {
+                                  setScores.push(`${match.set1Score1}-${match.set1Score2}`);
+                                }
+                                if (match.set2Score1 !== null && match.set2Score1 !== undefined && 
+                                    match.set2Score2 !== null && match.set2Score2 !== undefined) {
+                                  setScores.push(`${match.set2Score1}-${match.set2Score2}`);
+                                }
+                                if (match.set3Score1 !== null && match.set3Score1 !== undefined && 
+                                    match.set3Score2 !== null && match.set3Score2 !== undefined) {
+                                  setScores.push(`${match.set3Score1}-${match.set3Score2}`);
+                                }
+                                if (match.set4Score1 !== null && match.set4Score1 !== undefined && 
+                                    match.set4Score2 !== null && match.set4Score2 !== undefined) {
+                                  setScores.push(`${match.set4Score1}-${match.set4Score2}`);
+                                }
+                                if (match.set5Score1 !== null && match.set5Score1 !== undefined && 
+                                    match.set5Score2 !== null && match.set5Score2 !== undefined) {
+                                  setScores.push(`${match.set5Score1}-${match.set5Score2}`);
+                                }
+                                const result = setScores.length > 0 ? setScores.join(' | ') : '0-0';
+                                console.log('🏐 User page set scores result:', result);
+                                return result;
+                              })()}
+                            </div>
+                          )}
+                          
+                          {/* Badminton: Set scores below main score */}
+                          {(match.competitionId === 'badminton-putra' || match.competitionId === 'badminton-putri' || match.competitionId === 'badminton-mixed') && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              {(() => {
+                                console.log('🏸 User page badminton match set scores:', {
+                                  matchId: match.id,
+                                  set1Score1: match.set1Score1,
+                                  set1Score2: match.set1Score2,
+                                  set2Score1: match.set2Score1,
+                                  set2Score2: match.set2Score2,
+                                  set3Score1: match.set3Score1,
+                                  set3Score2: match.set3Score2
+                                });
+                                const setScores = [];
+                                if (match.set1Score1 !== null && match.set1Score1 !== undefined && 
+                                    match.set1Score2 !== null && match.set1Score2 !== undefined) {
+                                  setScores.push(`${match.set1Score1}-${match.set1Score2}`);
+                                }
+                                if (match.set2Score1 !== null && match.set2Score1 !== undefined && 
+                                    match.set2Score2 !== null && match.set2Score2 !== undefined) {
+                                  setScores.push(`${match.set2Score1}-${match.set2Score2}`);
+                                }
+                                if (match.set3Score1 !== null && match.set3Score1 !== undefined && 
+                                    match.set3Score2 !== null && match.set3Score2 !== undefined) {
+                                  setScores.push(`${match.set3Score1}-${match.set3Score2}`);
+                                }
+                                const result = setScores.length > 0 ? setScores.join(' | ') : '0-0';
+                                console.log('🏸 User page badminton set scores result:', result);
+                                return result;
+                              })()}
+                            </div>
+                          )}
+                          
+                          {/* Futsal: Penalty scores below main score */}
+                          {match.competitionId === 'futsal' && (() => {
+                            const penalty1 = match.set1Score1 || 0;
+                            const penalty2 = match.set1Score2 || 0;
+                            const hasPenaltyScores = penalty1 > 0 || penalty2 > 0;
+                            const showPenalty = match.currentPeriod === 'PEN' || (match.status === 'completed' && hasPenaltyScores);
+                            
+                            return showPenalty ? (
+                              <div className="text-xs text-gray-600 font-semibold mt-1">
+                                Penalty: {penalty1} - {penalty2}
+                              </div>
+                            ) : null;
+                          })()}
                           {match.status === 'completed' && (
                             <div className="text-xs font-semibold text-black mt-1 flex items-center justify-center space-x-1">
                               <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.score1 > match.score2 ? match.faculty1.id : match.faculty2.id).split(' ')[0]}`}></div>

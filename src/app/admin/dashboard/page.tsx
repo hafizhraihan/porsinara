@@ -21,6 +21,8 @@ import {
   getPlayersByFaculty,
   getBasketballStats,
   saveBasketballStats,
+  getFutsalStats,
+  saveFutsalStats,
   updateVolleyballSetScore,
   getVolleyballSetScores,
   startPolling,
@@ -102,6 +104,14 @@ export default function AdminPanel() {
   const [manualScoreOverride, setManualScoreOverride] = useState<{[matchId: string]: boolean}>({});
   const [selectedQuarter, setSelectedQuarter] = useState<string>('Q1');
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Futsal stats state
+  const [expandedFutsalStatsMatchId, setExpandedFutsalStatsMatchId] = useState<string | null>(null);
+  const [futsalTeam1Players, setFutsalTeam1Players] = useState<any[]>([]);
+  const [futsalTeam2Players, setFutsalTeam2Players] = useState<any[]>([]);
+  const [futsalPlayerStats, setFutsalPlayerStats] = useState<{[playerId: string]: any}>({});
+  const [selectedFutsalPeriod, setSelectedFutsalPeriod] = useState<string>('1st Half');
+  const futsalAutoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Volleyball set scores state
   const [volleyballSetScores, setVolleyballSetScores] = useState<{
@@ -973,6 +983,12 @@ export default function AdminPanel() {
     return competition?.name.toLowerCase().includes('basketball');
   };
 
+  // Check if match is a futsal match
+  const isFutsalMatch = (match: Match) => {
+    const competition = competitions.find(c => c.id === match.competitionId);
+    return competition?.name.toLowerCase().includes('futsal');
+  };
+
   // Check if match is a volleyball match
   const isVolleyballMatch = (match: Match) => {
     return match.competitionId === 'volleyball';
@@ -983,10 +999,6 @@ export default function AdminPanel() {
     return match.competitionId === 'badminton-putra' || match.competitionId === 'badminton-putri' || match.competitionId === 'badminton-mixed';
   };
 
-  // Check if match is a futsal match
-  const isFutsalMatch = (match: Match) => {
-    return match.competitionId === 'futsal';
-  };
 
 
   // Update player stat value with delayed auto-save
@@ -1247,6 +1259,238 @@ export default function AdminPanel() {
         type: 'error',
         title: 'Error',
         message: error.message || 'Failed to save basketball stats'
+      });
+    }
+  };
+
+  // ===== FUTSAL STATS FUNCTIONS =====
+
+  // Toggle futsal stats expand (combines stats + penalty scores)
+  const toggleFutsalStatsExpand = async (matchId: string) => {
+    if (expandedFutsalStatsMatchId === matchId) {
+      // Collapse
+      setExpandedFutsalStatsMatchId(null);
+      setFutsalTeam1Players([]);
+      setFutsalTeam2Players([]);
+      setFutsalPlayerStats({});
+      // Also close penalty scores
+      setExpandedFutsalMatchId(null);
+      setFutsalPenaltyScores({});
+    } else {
+      // Expand - load both teams' players and penalty scores
+      setExpandedFutsalStatsMatchId(matchId);
+      setExpandedFutsalMatchId(matchId);
+      
+      const currentMatch = matches.find(m => m.id === matchId);
+      if (currentMatch) {
+        try {
+          // Load both teams' players and existing stats in parallel
+          const [team1, team2, existingStats] = await Promise.all([
+            getPlayersByFaculty(currentMatch.faculty1Id),
+            getPlayersByFaculty(currentMatch.faculty2Id),
+            getFutsalStats(matchId)
+          ]);
+          
+          setFutsalTeam1Players(team1);
+          setFutsalTeam2Players(team2);
+          
+          // Initialize player stats with existing data or zeros
+          const initialStats: {[playerId: string]: any} = {};
+          
+          [...team1, ...team2].forEach(player => {
+            const existingStat = existingStats.find((s: any) => s.player_id === player.id);
+            initialStats[player.id] = existingStat || {
+              shots_on_target: 0,
+              shots_off_target: 0,
+              goals: 0,
+              assists: 0,
+              clearances: 0,
+              fouls: 0,
+              turnovers: 0,
+              shots_received: 0,
+              saves: 0,
+              minutes_played: 0,
+              is_starter: false,
+              is_goalkeeper: false
+            };
+          });
+          
+          setFutsalPlayerStats(initialStats);
+          
+          // Load penalty scores
+          await loadFutsalPenaltyScores(matchId);
+          
+          console.log('Loaded existing futsal stats:', initialStats);
+          
+        } catch (error: any) {
+          console.error('Error loading futsal stats:', error);
+          addToast({
+            type: 'error',
+            title: 'Error',
+            message: 'Failed to load players. Please try again.'
+          });
+          setExpandedFutsalStatsMatchId(null);
+          setExpandedFutsalMatchId(null);
+        }
+      }
+    }
+  };
+
+  // Update player futsal stat
+  const updateFutsalPlayerStat = (playerId: string, field: string, value: number) => {
+    setFutsalPlayerStats(prevStats => ({
+      ...prevStats,
+      [playerId]: {
+        ...prevStats[playerId],
+        [field]: Math.max(0, value) // Ensure non-negative values
+      }
+    }));
+
+    // Clear any existing timeout
+    if (futsalAutoSaveTimeoutRef.current) {
+      clearTimeout(futsalAutoSaveTimeoutRef.current);
+    }
+
+    // Set new timeout for auto-save
+    futsalAutoSaveTimeoutRef.current = setTimeout(() => {
+      console.log('Auto-saving futsal stats...');
+      handleSaveAllFutsalStats();
+    }, 2000); // Auto-save after 2 seconds of inactivity
+  };
+
+  // Increment futsal stat
+  const incrementFutsalStat = (playerId: string, field: string) => {
+    const currentValue = futsalPlayerStats[playerId]?.[field] || 0;
+    updateFutsalPlayerStat(playerId, field, currentValue + 1);
+
+    // Auto-increment shots_on_target when goals is incremented
+    if (field === 'goals') {
+      const shotsValue = futsalPlayerStats[playerId]?.shots_on_target || 0;
+      updateFutsalPlayerStat(playerId, 'shots_on_target', shotsValue + 1);
+    }
+
+    // Update match score when goals are scored
+    if (field === 'goals') {
+      // Find player and determine their faculty
+      const player = [...futsalTeam1Players, ...futsalTeam2Players].find(p => p.id === playerId);
+      if (player && expandedFutsalStatsMatchId) {
+        const currentMatch = matches.find(m => m.id === expandedFutsalStatsMatchId);
+        if (currentMatch) {
+          const isTeam1 = player.faculty_id === currentMatch.faculty1Id;
+          console.log('Auto-updating futsal score for team:', isTeam1 ? 'team1' : 'team2');
+          
+          // Update matches state
+          setMatches(prevMatches => prevMatches.map(m => {
+            if (m.id === expandedFutsalStatsMatchId) {
+              const newScore1 = isTeam1 ? m.faculty1Score + 1 : m.faculty1Score;
+              const newScore2 = !isTeam1 ? m.faculty2Score + 1 : m.faculty2Score;
+              console.log('New futsal score will be:', newScore1, '-', newScore2);
+              
+              // Save to database
+              updateMatchScore(expandedFutsalStatsMatchId, newScore1, newScore2, 'live').catch(error => {
+                console.error('Error saving futsal score to database:', error);
+              });
+              
+              return {
+                ...m,
+                faculty1Score: newScore1,
+                faculty2Score: newScore2
+              };
+            }
+            return m;
+          }));
+        }
+      }
+    }
+  };
+
+  // Decrement futsal stat
+  const decrementFutsalStat = (playerId: string, field: string) => {
+    const currentValue = futsalPlayerStats[playerId]?.[field] || 0;
+    if (currentValue <= 0) return; // Prevent negative values
+    
+    updateFutsalPlayerStat(playerId, field, currentValue - 1);
+
+    // Auto-decrement shots_on_target when goals is decremented
+    if (field === 'goals') {
+      const shotsValue = futsalPlayerStats[playerId]?.shots_on_target || 0;
+      if (shotsValue > 0) updateFutsalPlayerStat(playerId, 'shots_on_target', shotsValue - 1);
+    }
+
+    // Update match score when goals are decremented
+    if (field === 'goals') {
+      // Find player and determine their faculty
+      const player = [...futsalTeam1Players, ...futsalTeam2Players].find(p => p.id === playerId);
+      if (player && expandedFutsalStatsMatchId) {
+        const currentMatch = matches.find(m => m.id === expandedFutsalStatsMatchId);
+        if (currentMatch) {
+          const isTeam1 = player.faculty_id === currentMatch.faculty1Id;
+          console.log('Auto-updating futsal score for team:', isTeam1 ? 'team1' : 'team2', 'decrementing');
+          
+          // Update matches state
+          setMatches(prevMatches => prevMatches.map(m => {
+            if (m.id === expandedFutsalStatsMatchId) {
+              const newScore1 = isTeam1 ? Math.max(0, m.faculty1Score - 1) : m.faculty1Score;
+              const newScore2 = !isTeam1 ? Math.max(0, m.faculty2Score - 1) : m.faculty2Score;
+              console.log('New futsal score will be:', newScore1, '-', newScore2);
+              
+              // Save to database
+              updateMatchScore(expandedFutsalStatsMatchId, newScore1, newScore2, 'live').catch(error => {
+                console.error('Error saving futsal score to database:', error);
+              });
+              
+              return {
+                ...m,
+                faculty1Score: newScore1,
+                faculty2Score: newScore2
+              };
+            }
+            return m;
+          }));
+        }
+      }
+    }
+  };
+
+  // Save all futsal stats
+  const handleSaveAllFutsalStats = async () => {
+    if (!expandedFutsalStatsMatchId) return;
+
+    try {
+      // Prepare stats for all players who have any stats entered
+      const statsToSave = Object.entries(futsalPlayerStats)
+        .filter(([playerId, stats]) => {
+          // Only save if player has any non-zero stats
+          return Object.entries(stats).some(([key, value]) => 
+            !['is_starter', 'is_goalkeeper'].includes(key) && typeof value === 'number' && value > 0
+          );
+        })
+        .map(([playerId, stats]) => ({
+          player_id: playerId,
+          ...stats
+        }));
+
+      if (statsToSave.length === 0) {
+        console.log('No futsal stats to save');
+        return;
+      }
+
+      console.log('Saving futsal stats:', statsToSave);
+      
+      await saveFutsalStats(expandedFutsalStatsMatchId, statsToSave);
+      
+      addToast({
+        type: 'success',
+        title: 'Success',
+        message: `Futsal stats saved for ${statsToSave.length} players`
+      });
+      
+    } catch (error) {
+      console.error('Error saving futsal stats:', error);
+      addToast({
+        type: 'error',
+        title: 'Save Error',
+        message: 'Failed to save futsal stats. Please try again.'
       });
     }
   };
@@ -1792,13 +2036,24 @@ export default function AdminPanel() {
       // Map the status to Supabase format
       const supabaseStatus = status === 'ongoing' ? 'live' : status === 'completed' ? 'completed' : 'scheduled';
       
+      // Find the match to check if it's a futsal match
+      const currentMatch = matches.find(m => m.id === matchId);
+      const isFutsal = currentMatch ? isFutsalMatch(currentMatch) : false;
+      
+      // If completing a futsal match, auto-set period to FT
+      const updateData: any = { status: supabaseStatus };
+      if (status === 'completed' && isFutsal) {
+        updateData.current_period = 'FT';
+        console.log('⚽ Auto-setting futsal match period to FT on completion');
+      }
+      
       // Update in Supabase
-      await updateMatch(matchId, { status: supabaseStatus });
+      await updateMatch(matchId, updateData);
       
       // Update local state
       setMatches(prev => prev.map(match => 
         match.id === matchId 
-          ? { ...match, status }
+          ? { ...match, status, currentPeriod: status === 'completed' && isFutsal ? 'FT' : match.currentPeriod }
           : match
       ));
     } catch (error) {
@@ -1812,7 +2067,12 @@ export default function AdminPanel() {
         // Update existing match
         const supabaseStatus = matchData.status === 'ongoing' ? 'live' : matchData.status === 'completed' ? 'completed' : 'scheduled';
         
-        await updateMatch(editingMatch.id, {
+        // Check if this is a futsal match
+        const competition = competitions.find(c => c.id === matchData.competitionId);
+        const isFutsal = competition?.name.toLowerCase().includes('futsal') || false;
+        
+        // If completing a futsal match, auto-set period to FT
+        const updatePayload: any = {
           competition_id: matchData.competitionId,
           faculty1_id: matchData.faculty1Id,
           faculty2_id: matchData.faculty2Id,
@@ -1824,7 +2084,14 @@ export default function AdminPanel() {
           location: matchData.location || 'Main Field',
           round: matchData.round || 'Regular',
           youtube_stream_link: matchData.youtubeStreamLink || ''
-        } as any);
+        };
+        
+        if (matchData.status === 'completed' && isFutsal) {
+          updatePayload.current_period = 'FT';
+          console.log('⚽ Auto-setting futsal match period to FT on completion (via save match)');
+        }
+        
+        await updateMatch(editingMatch.id, updatePayload as any);
         
         // Refresh matches from database after update
         const updatedMatches = await getMatches();
@@ -2369,6 +2636,15 @@ export default function AdminPanel() {
                               <ChevronDown className={`w-4 h-4 transition-transform ${expandedMatchId === match.id ? 'rotate-180' : ''}`} />
                             </button>
                           )}
+                          {isFutsalMatch(match) && (
+                            <button
+                              onClick={() => toggleFutsalStatsExpand(match.id)}
+                              className="text-green-600 hover:text-green-900"
+                              title="Futsal Stats & Scores"
+                            >
+                              <ChevronDown className={`w-4 h-4 transition-transform ${expandedFutsalStatsMatchId === match.id ? 'rotate-180' : ''}`} />
+                            </button>
+                          )}
                           
                           {/* Volleyball Set Scores Button */}
                           {match.competitionId === 'volleyball' && (
@@ -2392,16 +2668,6 @@ export default function AdminPanel() {
                             </button>
                           )}
                           
-                          {/* Futsal Penalty Scores Button */}
-                          {isFutsalMatch(match) && (
-                            <button
-                              onClick={() => toggleFutsalExpand(match.id)}
-                              className={`${expandedFutsalMatchId === match.id ? 'text-green-600' : 'text-green-600'} hover:text-green-900`}
-                              title="Penalty Scores"
-                            >
-                              <ChevronDown className={`w-4 h-4 transition-transform ${expandedFutsalMatchId === match.id ? 'rotate-180' : ''}`} />
-                            </button>
-                          )}
                           
                           
                             <button
@@ -2761,6 +3027,401 @@ export default function AdminPanel() {
                       </tr>
                     )}
                     
+                    {/* Expandable Futsal Stats Row */}
+                    {isFutsalMatch(match) && expandedFutsalStatsMatchId === match.id && (
+                      <tr>
+                        <td colSpan={8} className="px-6 py-6 bg-gray-50">
+                          <div className="w-full">
+                            <div className="flex items-center justify-between mb-4">
+                              <h4 className="text-lg font-semibold text-gray-900">⚽ Input Player Stats</h4>
+                              <div className="flex space-x-1">
+                                {(() => {
+                                  const currentMatch = matches.find(m => m.id === expandedFutsalStatsMatchId);
+                                  return ['1st Half', 'HT', '2nd Half', 'ET1', 'ET2', 'FT', 'PEN'].map((period) => (
+                                  <button
+                                      key={period}
+                                    onClick={() => {
+                                        if (expandedFutsalStatsMatchId) {
+                                          handlePeriodUpdate(expandedFutsalStatsMatchId, period);
+                                      }
+                                    }}
+                                    className={`px-3 py-1 text-sm font-medium rounded border transition-colors ${
+                                        currentMatch?.currentPeriod === period
+                                          ? 'bg-green-500 text-white border-green-500'
+                                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                    }`}
+                                  >
+                                      {period}
+                                  </button>
+                                  ));
+                                })()}
+                              </div>
+                            </div>
+                            
+                            {/* Penalty Score Input - Only show when period is PEN */}
+                            {match.currentPeriod === 'PEN' && (
+                              <div className="bg-yellow-50 p-4 rounded-lg border mb-4">
+                                <div className="text-center mb-2">
+                                  <h5 className="text-sm font-semibold text-gray-700">Penalty Shootout Scores</h5>
+                                </div>
+                              <div className="flex items-center justify-center space-x-4">
+                                <div className="text-center">
+                                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-center space-x-2">
+                                    <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty1Id).split(' ')[0]}`}></div>
+                                    <span>{faculties.find(f => f.id === match.faculty1Id)?.short_name || 'Team 1'}</span>
+                                  </label>
+                                  <div className="flex items-center justify-center">
+                                    <input
+                                      type="number"
+                                        value={futsalPenaltyScores.penalty1 || 0}
+                                      onChange={(e) => {
+                                          const penalty1 = parseInt(e.target.value) || 0;
+                                          const penalty2 = futsalPenaltyScores.penalty2 || 0;
+                                          handleFutsalPenaltyScoreUpdate(match.id, penalty1, penalty2);
+                                      }}
+                                      className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm text-gray-900"
+                                      min="0"
+                                    />
+                                  </div>
+                                </div>
+                                
+                                <div className="text-2xl font-bold text-gray-500">-</div>
+                                
+                                <div className="text-center">
+                                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-center space-x-2">
+                                    <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty2Id).split(' ')[0]}`}></div>
+                                    <span>{faculties.find(f => f.id === match.faculty2Id)?.short_name || 'Team 2'}</span>
+                                  </label>
+                                  <div className="flex items-center justify-center">
+                                    <input
+                                      type="number"
+                                        value={futsalPenaltyScores.penalty2 || 0}
+                                      onChange={(e) => {
+                                          const penalty1 = futsalPenaltyScores.penalty1 || 0;
+                                          const penalty2 = parseInt(e.target.value) || 0;
+                                          handleFutsalPenaltyScoreUpdate(match.id, penalty1, penalty2);
+                                      }}
+                                      className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm text-gray-900"
+                                      min="0"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                            )}
+                            
+                            {/* Stats Table */}
+                            <div className="overflow-x-auto">
+                              <table className="w-full border-collapse bg-white">
+                                <thead>
+                                  <tr className="bg-gray-100">
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900">Player</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-yellow-50" colSpan={2}>Shots</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-green-50">Goals</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-blue-50">Assists</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-purple-50">Clearances</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-pink-50">Fouls</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-gray-50">Turnovers</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-orange-50" colSpan={3}>Goalkeeper</th>
+                                    
+                                  </tr>
+                                  <tr className="bg-gray-50">
+                                    <th className="border px-1 py-1 text-xs text-gray-600"></th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-yellow-50">On Target</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-yellow-50">Off Target</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-green-50"></th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-blue-50"></th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-purple-50"></th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-pink-50"></th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-gray-50"></th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-orange-50">Shots Received</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-orange-50">Saves</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-red-50">GK</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {/* Team 1 Players */}
+                                  <tr>
+                                    <td 
+                                      colSpan={11} 
+                                      className={`border px-2 py-1 text-sm font-semibold text-white ${getFacultyColorClasses(match.faculty1Id).split(' ')[0]}`}
+                                    >
+                                      {faculties.find(f => f.id === match.faculty1Id)?.name || 'Team 1'} ({futsalTeam1Players.length} players)
+                                    </td>
+                                  </tr>
+                                  {futsalTeam1Players.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={10} className="border px-2 py-2 text-xs text-gray-500 text-center">
+                                        No players found for this faculty
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    futsalTeam1Players.map(player => {
+                                      const stats = futsalPlayerStats[player.id] || {};
+                                      
+                                      return (
+                                        <tr key={player.id} className="hover:bg-blue-50">
+                                          <td className="border px-2 py-2 text-xs text-gray-900">
+                                            <div className="font-medium">{player.name}</div>
+                                            <div className="text-gray-600">#{player.jersey_number}</div>
+                                          </td>
+                                          
+                                          {/* Shots On Target */}
+                                          <td className="border px-1 py-1 bg-yellow-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'shots_on_target')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.shots_on_target || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'shots_on_target')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Shots Off Target */}
+                                          <td className="border px-1 py-1 bg-yellow-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'shots_off_target')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.shots_off_target || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'shots_off_target')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Goals */}
+                                          <td className="border px-1 py-1 bg-green-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'goals')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.goals || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'goals')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Assists */}
+                                          <td className="border px-1 py-1 bg-blue-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'assists')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.assists || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'assists')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Clearances */}
+                                          <td className="border px-1 py-1 bg-purple-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'clearances')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.clearances || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'clearances')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Fouls */}
+                                          <td className="border px-1 py-1 bg-pink-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'fouls')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.fouls || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'fouls')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Turnovers */}
+                                          <td className="border px-1 py-1 bg-gray-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'turnovers')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.turnovers || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'turnovers')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Shots Received (Goalkeeper) */}
+                                          <td className="border px-1 py-1 bg-orange-50">
+                                            {stats.is_goalkeeper ? (
+                                              <div className="flex items-center justify-center gap-1">
+                                                <button onClick={() => decrementFutsalStat(player.id, 'shots_received')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                                <span className="text-xs w-6 text-center text-gray-900">{stats.shots_received || 0}</span>
+                                                <button onClick={() => incrementFutsalStat(player.id, 'shots_received')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                              </div>
+                                            ) : (
+                                              <span className="text-xs text-gray-400 flex justify-center">-</span>
+                                            )}
+                                          </td>
+                                          
+                                          {/* Saves (Goalkeeper) */}
+                                          <td className="border px-1 py-1 bg-orange-50">
+                                            {stats.is_goalkeeper ? (
+                                              <div className="flex items-center justify-center gap-1">
+                                                <button onClick={() => decrementFutsalStat(player.id, 'saves')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                                <span className="text-xs w-6 text-center text-gray-900">{stats.saves || 0}</span>
+                                                <button onClick={() => incrementFutsalStat(player.id, 'saves')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                              </div>
+                                            ) : (
+                                              <span className="text-xs text-gray-400 flex justify-center">-</span>
+                                            )}
+                                            
+                                          </td>
+                                          {/* KOLOM CHECKBOX Is GK */}
+                                          <td className="border bg-orange-50 px-1 py-1 text-center">
+                                            <input
+                                              type="checkbox"
+                                              checked={!!stats.is_goalkeeper}
+                                              onChange={e => {
+                                                updateFutsalPlayerStat(player.id, 'is_goalkeeper', e.target.checked ? 1 : 0);
+                                              }}
+                                            />
+                                          </td>
+                                        </tr>
+                                      );
+                                    })
+                                  )}
+                                  
+                                  {/* Team 2 Players */}
+                                  <tr>
+                                    <td 
+                                      colSpan={11} 
+                                      className={`border px-2 py-1 text-sm font-semibold text-white ${getFacultyColorClasses(match.faculty2Id).split(' ')[0]}`}
+                                    >
+                                      {faculties.find(f => f.id === match.faculty2Id)?.name || 'Team 2'} ({futsalTeam2Players.length} players)
+                                    </td>
+                                  </tr>
+                                  {futsalTeam2Players.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={10} className="border px-2 py-2 text-xs text-gray-500 text-center">
+                                        No players found for this faculty
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    futsalTeam2Players.map(player => {
+                                      const stats = futsalPlayerStats[player.id] || {};
+                                      
+                                      return (
+                                        <tr key={player.id} className="hover:bg-green-50">
+                                          <td className="border px-2 py-2 text-xs text-gray-900">
+                                            <div className="font-medium">{player.name}</div>
+                                            <div className="text-gray-600">#{player.jersey_number}</div>
+                                          </td>
+                                          
+                                          {/* Shots On Target */}
+                                          <td className="border px-1 py-1 bg-yellow-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'shots_on_target')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.shots_on_target || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'shots_on_target')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Shots Off Target */}
+                                          <td className="border px-1 py-1 bg-yellow-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'shots_off_target')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.shots_off_target || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'shots_off_target')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Goals */}
+                                          <td className="border px-1 py-1 bg-green-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'goals')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.goals || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'goals')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Assists */}
+                                          <td className="border px-1 py-1 bg-blue-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'assists')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.assists || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'assists')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Clearances */}
+                                          <td className="border px-1 py-1 bg-purple-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'clearances')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.clearances || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'clearances')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Fouls */}
+                                          <td className="border px-1 py-1 bg-pink-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'fouls')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.fouls || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'fouls')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Turnovers */}
+                                          <td className="border px-1 py-1 bg-gray-50">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'turnovers')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                              <span className="text-xs w-6 text-center text-gray-900">{stats.turnovers || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'turnovers')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                            </div>
+                                          </td>
+                                          
+                                          {/* Shots Received (Goalkeeper) */}
+                                          <td className="border px-1 py-1 bg-orange-50">
+                                            {stats.is_goalkeeper ? (
+                                              <div className="flex items-center justify-center gap-1">
+                                                <button onClick={() => decrementFutsalStat(player.id, 'shots_received')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                                <span className="text-xs w-6 text-center text-gray-900">{stats.shots_received || 0}</span>
+                                                <button onClick={() => incrementFutsalStat(player.id, 'shots_received')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                              </div>
+                                            ) : (
+                                              <span className="text-xs text-gray-400 flex justify-center">-</span>
+                                            )}
+                                          </td>
+                                          
+                                          {/* Saves (Goalkeeper) */}
+                                          <td className="border w-24 px-1 py-1 bg-orange-50">
+                                            {stats.is_goalkeeper ? (
+                                              <div className="flex items-center justify-center gap-1">
+                                                <button onClick={() => decrementFutsalStat(player.id, 'saves')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
+                                                <span className="text-xs w-6 text-center text-gray-900">{stats.saves || 0}</span>
+                                                <button onClick={() => incrementFutsalStat(player.id, 'saves')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                              </div>
+                                            ) : (
+                                              <span className="text-xs text-gray-400 flex justify-center">-</span>
+                                            )}
+                                          </td>
+                                          {/* KOLOM CHECKBOX Is GK */}
+                                          <td className="border bg-orange-50 w-10 px-1 py-1 text-center">
+                                            <input
+                                              type="checkbox"
+                                              checked={!!stats.is_goalkeeper}
+                                              onChange={e => {
+                                                updateFutsalPlayerStat(player.id, 'is_goalkeeper', e.target.checked ? 1 : 0);
+                                              }}
+                                            />
+                                          </td>
+                                        </tr>
+                                      );
+                                    })
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex justify-end gap-2 mt-4">
+                              <button
+                                onClick={handleSaveAllFutsalStats}
+                                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm font-medium"
+                              >
+                                💾 Save All Stats
+                              </button>
+                              <button
+                                onClick={() => toggleFutsalStatsExpand(match.id)}
+                                className="px-4 py-2 border rounded-lg hover:bg-gray-100 text-sm font-medium text-gray-900"
+                              >
+                                Close
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    
                     {/* Expandable Volleyball Set Scores Row */}
                     {match.competitionId === 'volleyball' && expandedVolleyballMatchId === match.id && (
                       <tr>
@@ -2907,17 +3568,17 @@ export default function AdminPanel() {
                             
                             {/* Set Score Input */}
                             <div className="bg-white p-4 rounded-lg border">
-                              <div className="flex items-center justify-center space-x-4">
-                                <div className="text-center">
-                                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-center space-x-2">
-                                    <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty1Id).split(' ')[0]}`}></div>
-                                    <span>{faculties.find(f => f.id === match.faculty1Id)?.short_name || 'Team 1'}</span>
-                                  </label>
-                                  <div className="flex items-center justify-center">
-                                    <input
-                                      type="number"
+                                <div className="flex items-center justify-center space-x-4">
+                                  <div className="text-center">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-center space-x-2">
+                                      <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty1Id).split(' ')[0]}`}></div>
+                                      <span>{faculties.find(f => f.id === match.faculty1Id)?.short_name || 'Team 1'}</span>
+                                    </label>
+                                    <div className="flex items-center justify-center">
+                                      <input
+                                        type="number"
                                       value={(badmintonSetScores as any)[`set${currentBadmintonSet}`]?.team1 || 0}
-                                      onChange={(e) => {
+                                        onChange={(e) => {
                                         const newScore = parseInt(e.target.value) || 0;
                                         handleBadmintonSetScoreUpdate(
                                           match.id,
@@ -2925,25 +3586,25 @@ export default function AdminPanel() {
                                           newScore,
                                           (badmintonSetScores as any)[`set${currentBadmintonSet}`]?.team2 || 0
                                         );
-                                      }}
-                                      className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm text-gray-900"
-                                      min="0"
-                                    />
+                                        }}
+                                        className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm text-gray-900"
+                                        min="0"
+                                      />
+                                    </div>
                                   </div>
-                                </div>
-                                
-                                <div className="text-2xl font-bold text-gray-500">-</div>
-                                
-                                <div className="text-center">
-                                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-center space-x-2">
-                                    <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty2Id).split(' ')[0]}`}></div>
-                                    <span>{faculties.find(f => f.id === match.faculty2Id)?.short_name || 'Team 2'}</span>
-                                  </label>
-                                  <div className="flex items-center justify-center">
-                                    <input
-                                      type="number"
+                                  
+                                  <div className="text-2xl font-bold text-gray-500">-</div>
+                                  
+                                  <div className="text-center">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-center space-x-2">
+                                      <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty2Id).split(' ')[0]}`}></div>
+                                      <span>{faculties.find(f => f.id === match.faculty2Id)?.short_name || 'Team 2'}</span>
+                                    </label>
+                                    <div className="flex items-center justify-center">
+                                      <input
+                                        type="number"
                                       value={(badmintonSetScores as any)[`set${currentBadmintonSet}`]?.team2 || 0}
-                                      onChange={(e) => {
+                                        onChange={(e) => {
                                         const newScore = parseInt(e.target.value) || 0;
                                         handleBadmintonSetScoreUpdate(
                                           match.id,
@@ -2951,151 +3612,18 @@ export default function AdminPanel() {
                                           (badmintonSetScores as any)[`set${currentBadmintonSet}`]?.team1 || 0,
                                           newScore
                                         );
-                                      }}
-                                      className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm text-gray-900"
-                                      min="0"
-                                    />
+                                        }}
+                                        className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm text-gray-900"
+                                        min="0"
+                                      />
+                                    </div>
                                   </div>
                                 </div>
                               </div>
-                            </div>
                             
                             <div className="flex justify-end gap-2 mt-4">
                               <button
                                 onClick={() => toggleBadmintonExpand(match.id)}
-                                className="px-4 py-2 border rounded-lg hover:bg-gray-100 text-sm font-medium text-gray-900"
-                              >
-                                Close
-                              </button>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                    
-                    {/* Expandable Futsal Penalty Scores Row */}
-                    {isFutsalMatch(match) && expandedFutsalMatchId === match.id && (
-                      <tr>
-                        <td colSpan={8} className="px-6 py-6 bg-gray-50">
-                          <div className="w-full">
-                            <div className="flex items-center justify-between mb-4">
-                              <h4 className="text-lg font-semibold text-gray-900">⚽ Futsal Penalty Scores</h4>
-                              <div className="flex space-x-1">
-                                {['1st Half', 'HT', '2nd Half', 'ET1', 'ET2', 'FT', 'PEN'].map((period) => (
-                                  <button
-                                    key={period}
-                                    onClick={() => {
-                                      handlePeriodUpdate(match.id, period);
-                                      console.log('⚽ Updated currentPeriod to:', period);
-                                    }}
-                                    className={`px-3 py-1 text-sm font-medium rounded border transition-colors ${
-                                      match.currentPeriod === period
-                                        ? 'bg-green-500 text-white border-green-500'
-                                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                                    }`}
-                                  >
-                                    {period}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                            
-                            {/* Main Score Input - Only show when period is NOT PEN */}
-                            {match.currentPeriod !== 'PEN' && (
-                              <div className="bg-white p-4 rounded-lg border mb-4">
-                                <div className="flex items-center justify-center space-x-4">
-                                  <div className="text-center">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-center space-x-2">
-                                      <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty1Id).split(' ')[0]}`}></div>
-                                      <span>{faculties.find(f => f.id === match.faculty1Id)?.short_name || 'Team 1'}</span>
-                                    </label>
-                                    <div className="flex items-center justify-center">
-                                      <input
-                                        type="number"
-                                        value={match.faculty1Score}
-                                        onChange={(e) => handleScoreUpdate(match.id, 'faculty1', parseInt(e.target.value) || 0)}
-                                        className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm text-gray-900"
-                                        min="0"
-                                      />
-                                    </div>
-                                  </div>
-                                  
-                                  <div className="text-2xl font-bold text-gray-500">-</div>
-                                  
-                                  <div className="text-center">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-center space-x-2">
-                                      <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty2Id).split(' ')[0]}`}></div>
-                                      <span>{faculties.find(f => f.id === match.faculty2Id)?.short_name || 'Team 2'}</span>
-                                    </label>
-                                    <div className="flex items-center justify-center">
-                                      <input
-                                        type="number"
-                                        value={match.faculty2Score}
-                                        onChange={(e) => handleScoreUpdate(match.id, 'faculty2', parseInt(e.target.value) || 0)}
-                                        className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm text-gray-900"
-                                        min="0"
-                                      />
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                            
-                            {/* Penalty Score Input - Only show when period is PEN */}
-                            {match.currentPeriod === 'PEN' && (
-                              <div className="bg-yellow-50 p-4 rounded-lg border">
-                                <div className="text-center mb-2">
-                                  <h5 className="text-sm font-semibold text-gray-700">Penalty Shootout Scores</h5>
-                                </div>
-                                <div className="flex items-center justify-center space-x-4">
-                                  <div className="text-center">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-center space-x-2">
-                                      <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty1Id).split(' ')[0]}`}></div>
-                                      <span>{faculties.find(f => f.id === match.faculty1Id)?.short_name || 'Team 1'}</span>
-                                    </label>
-                                    <div className="flex items-center justify-center">
-                                      <input
-                                        type="number"
-                                        value={futsalPenaltyScores.penalty1 || 0}
-                                        onChange={(e) => {
-                                          const penalty1 = parseInt(e.target.value) || 0;
-                                          const penalty2 = futsalPenaltyScores.penalty2 || 0;
-                                          handleFutsalPenaltyScoreUpdate(match.id, penalty1, penalty2);
-                                        }}
-                                        className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm text-gray-900"
-                                        min="0"
-                                      />
-                                    </div>
-                                  </div>
-                                  
-                                  <div className="text-2xl font-bold text-gray-500">-</div>
-                                  
-                                  <div className="text-center">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-center space-x-2">
-                                      <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.faculty2Id).split(' ')[0]}`}></div>
-                                      <span>{faculties.find(f => f.id === match.faculty2Id)?.short_name || 'Team 2'}</span>
-                                    </label>
-                                    <div className="flex items-center justify-center">
-                                      <input
-                                        type="number"
-                                        value={futsalPenaltyScores.penalty2 || 0}
-                                        onChange={(e) => {
-                                          const penalty1 = futsalPenaltyScores.penalty1 || 0;
-                                          const penalty2 = parseInt(e.target.value) || 0;
-                                          handleFutsalPenaltyScoreUpdate(match.id, penalty1, penalty2);
-                                        }}
-                                        className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm text-gray-900"
-                                        min="0"
-                                      />
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                            
-                            <div className="flex justify-end gap-2 mt-4">
-                              <button
-                                onClick={() => toggleFutsalExpand(match.id)}
                                 className="px-4 py-2 border rounded-lg hover:bg-gray-100 text-sm font-medium text-gray-900"
                               >
                                 Close

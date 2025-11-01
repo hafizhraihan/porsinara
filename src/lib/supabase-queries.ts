@@ -1354,3 +1354,161 @@ export async function getPlayerBasketballStats(playerId: string): Promise<any[]>
 
   return data || []
 }
+
+// ===== FUTSAL STATS =====
+
+export async function getFutsalStats(matchId: string): Promise<any[]> {
+  try {
+    console.log('Fetching futsal stats for match:', matchId)
+    const { data, error } = await supabase
+      .from('futsal_stats')
+      .select('*')
+      .eq('match_id', matchId)
+
+    if (error) {
+      console.error('Error fetching futsal stats:', error)
+      console.error('Error details:', JSON.stringify(error, null, 2))
+      // Return empty array instead of throwing - stats might not exist yet
+      return []
+    }
+
+    console.log('Fetched futsal stats:', data)
+    console.log('Number of stats fetched:', data?.length || 0)
+    return data || []
+  } catch (error) {
+    console.error('Error in getFutsalStats:', error)
+    // Return empty array for graceful failure
+    return []
+  }
+}
+
+export async function saveFutsalStats(
+  matchId: string,
+  stats: Array<{
+    player_id: string
+    // Shooting statistics
+    shots_on_target?: number
+    shots_off_target?: number
+    // Scoring and assists
+    goals?: number
+    assists?: number
+    // Defensive statistics
+    clearances?: number
+    // Discipline statistics
+    fouls?: number
+    // Offensive statistics
+    turnovers?: number
+    // Goalkeeper statistics (NULL for field players)
+    shots_received?: number
+    saves?: number
+    // Game metadata
+    minutes_played?: number
+    is_starter?: boolean
+    is_goalkeeper?: boolean
+  }>
+): Promise<void> {
+  try {
+    console.log('Saving futsal stats for match:', matchId)
+    console.log('Stats data:', stats)
+    
+    // Use upsert (update if exists, insert if not) instead of delete + insert
+    const statsData = stats.map(stat => ({
+      match_id: matchId,
+      // Ensure all required fields have default values
+      shots_on_target: 0,
+      shots_off_target: 0,
+      goals: 0,
+      assists: 0,
+      clearances: 0,
+      fouls: 0,
+      turnovers: 0,
+      shots_received: stat.is_goalkeeper ? 0 : null,
+      saves: stat.is_goalkeeper ? 0 : null,
+      minutes_played: 0,
+      is_starter: false,
+      is_goalkeeper: false,
+      ...stat
+    }))
+    
+    console.log('Upserting futsal stats:', statsData)
+    
+    const { data, error } = await supabase
+      .from('futsal_stats')
+      .upsert(statsData, {
+        onConflict: 'match_id,player_id'
+      })
+      .select()
+    
+    if (error) {
+      console.error('Error inserting futsal stats:', error)
+      console.error('Error details:', JSON.stringify(error, null, 2))
+      throw error
+    }
+    
+    console.log('Futsal stats saved successfully:', data)
+    console.log('Number of records saved:', data?.length || 0)
+  } catch (error) {
+    console.error('Error saving futsal stats:', error)
+    console.error('Full error object:', error)
+    throw error
+  }
+}
+
+export async function updateFutsalStat(
+  statId: string,
+  updates: {
+    // Shooting statistics
+    shots_on_target?: number
+    shots_off_target?: number
+    // Scoring and assists
+    goals?: number
+    assists?: number
+    // Defensive statistics
+    clearances?: number
+    // Discipline statistics
+    fouls?: number
+    // Offensive statistics
+    turnovers?: number
+    // Goalkeeper statistics
+    shots_received?: number
+    saves?: number
+    // Game metadata
+    minutes_played?: number
+    is_starter?: boolean
+    is_goalkeeper?: boolean
+  }
+): Promise<void> {
+  const { error } = await supabase
+    .from('futsal_stats')
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', statId)
+
+  if (error) {
+    console.error('Error updating futsal stat:', error)
+    throw error
+  }
+}
+
+export async function getPlayerFutsalStats(playerId: string): Promise<any[]> {
+  const { data, error } = await supabase
+    .from('futsal_stats')
+    .select(`
+      *,
+      match:matches(
+        id,
+        date,
+        competition:competitions(name)
+      )
+    `)
+    .eq('player_id', playerId)
+
+  if (error) {
+    console.error('Error fetching player futsal stats:', error)
+    throw error
+  }
+
+  return data || []
+}

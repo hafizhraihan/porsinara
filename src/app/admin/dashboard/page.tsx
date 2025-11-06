@@ -82,7 +82,7 @@ export default function AdminPanel() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [faculties, setFaculties] = useState<Faculty[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
   const [syncingMedals, setSyncingMedals] = useState(false);
   const { addToast } = useToast();
@@ -884,11 +884,13 @@ export default function AdminPanel() {
       setTeam2Players([]);
       setPlayerStats({});
     } else {
-      // Expand - load both teams' players
-      setExpandedMatchId(matchId);
-      
+      // Expand - set state first for instant UI response
       const currentMatch = matches.find(m => m.id === matchId);
       if (currentMatch) {
+        // Set expanded state immediately
+        setExpandedMatchId(matchId);
+        
+        // Load data in background
         try {
           // Load both teams' players in parallel
           const [team1, team2, existingStats] = await Promise.all([
@@ -1267,8 +1269,11 @@ export default function AdminPanel() {
 
   // Toggle futsal stats expand (combines stats + penalty scores)
   const toggleFutsalStatsExpand = async (matchId: string) => {
+    console.log('⚽ toggleFutsalStatsExpand called for match:', matchId);
+    
     if (expandedFutsalStatsMatchId === matchId) {
       // Collapse
+      console.log('⚽ Collapsing futsal stats');
       setExpandedFutsalStatsMatchId(null);
       setFutsalTeam1Players([]);
       setFutsalTeam2Players([]);
@@ -1277,19 +1282,27 @@ export default function AdminPanel() {
       setExpandedFutsalMatchId(null);
       setFutsalPenaltyScores({});
     } else {
-      // Expand - load both teams' players and penalty scores
-      setExpandedFutsalStatsMatchId(matchId);
-      setExpandedFutsalMatchId(matchId);
-      
+      // Expand - set state first for instant UI response
+      console.log('⚽ Expanding futsal stats');
       const currentMatch = matches.find(m => m.id === matchId);
+      console.log('⚽ Current match found:', currentMatch);
+      
       if (currentMatch) {
+        // Set expanded state immediately
+        setExpandedFutsalStatsMatchId(matchId);
+        setExpandedFutsalMatchId(matchId);
+        
+        // Load data in background
         try {
+          console.log('⚽ Loading teams and stats for match:', matchId);
           // Load both teams' players and existing stats in parallel
           const [team1, team2, existingStats] = await Promise.all([
             getPlayersByFaculty(currentMatch.faculty1Id),
             getPlayersByFaculty(currentMatch.faculty2Id),
             getFutsalStats(matchId)
           ]);
+          
+          console.log('⚽ Teams loaded - Team1:', team1.length, 'Team2:', team2.length);
           
           setFutsalTeam1Players(team1);
           setFutsalTeam2Players(team2);
@@ -1299,6 +1312,13 @@ export default function AdminPanel() {
           
           [...team1, ...team2].forEach(player => {
             const existingStat = existingStats.find((s: any) => s.player_id === player.id);
+            
+            // Debug log
+            if (existingStat) {
+              console.log(`⚽ Loading existing stat for player ${player.name}:`, existingStat);
+            }
+            
+            // Use same pattern as basketball: use existingStat directly if exists, or defaults
             initialStats[player.id] = existingStat || {
               shots_on_target: 0,
               shots_off_target: 0,
@@ -1314,6 +1334,11 @@ export default function AdminPanel() {
               is_goalkeeper: false
             };
           });
+          
+          console.log('⚽ LOAD - Total existing stats loaded:', existingStats.length);
+          console.log('⚽ LOAD - Player IDs from database:', existingStats.map((s: any) => s.player_id));
+          console.log('⚽ LOAD - Player IDs from teams:', [...team1, ...team2].map(p => p.id));
+          console.log('⚽ LOAD - Initialized stats for players:', Object.keys(initialStats).length);
           
           setFutsalPlayerStats(initialStats);
           
@@ -1338,24 +1363,67 @@ export default function AdminPanel() {
 
   // Update player futsal stat
   const updateFutsalPlayerStat = (playerId: string, field: string, value: number) => {
-    setFutsalPlayerStats(prevStats => ({
-      ...prevStats,
-      [playerId]: {
-        ...prevStats[playerId],
-        [field]: Math.max(0, value) // Ensure non-negative values
+    setFutsalPlayerStats(prevStats => {
+      const newStats = {
+        ...prevStats,
+        [playerId]: {
+          ...prevStats[playerId],
+          [field]: Math.max(0, value) // Ensure non-negative values
+        }
+      };
+
+      // Delay auto-save to allow all updates to complete
+      if (expandedFutsalStatsMatchId) {
+        // Clear existing timeout
+        if (futsalAutoSaveTimeoutRef.current) {
+          clearTimeout(futsalAutoSaveTimeoutRef.current);
+        }
+        
+        // Set new timeout for auto-save with newStats passed directly
+        futsalAutoSaveTimeoutRef.current = setTimeout(async () => {
+          try {
+            console.log(`⚽ Delayed auto-saving futsal stats for match ${expandedFutsalStatsMatchId}`);
+            console.log('⚽ Current futsalPlayerStats:', newStats);
+            
+            // Prepare stats using newStats directly (not from state)
+            const statsToSave = Object.entries(newStats)
+              .filter(([playerId, stats]) => {
+                const hasNonZeroStats = Object.entries(stats).some(([key, value]) => 
+                  !['is_starter', 'is_goalkeeper', 'id', 'match_id', 'player_id', 'created_at', 'updated_at'].includes(key) && typeof value === 'number' && value > 0
+                );
+                return hasNonZeroStats;
+              })
+              .map(([playerId, stats]) => {
+                return {
+                  player_id: playerId,
+                  shots_on_target: stats.shots_on_target ?? 0,
+                  shots_off_target: stats.shots_off_target ?? 0,
+                  goals: stats.goals ?? 0,
+                  assists: stats.assists ?? 0,
+                  clearances: stats.clearances ?? 0,
+                  fouls: stats.fouls ?? 0,
+                  turnovers: stats.turnovers ?? 0,
+                  shots_received: stats.is_goalkeeper ? (stats.shots_received ?? 0) : null,
+                  saves: stats.is_goalkeeper ? (stats.saves ?? 0) : null,
+                  minutes_played: stats.minutes_played ?? 0,
+                  is_starter: !!stats.is_starter,
+                  is_goalkeeper: !!stats.is_goalkeeper
+                };
+              });
+            
+            if (statsToSave.length > 0) {
+              console.log('⚽ Stats to save:', statsToSave);
+              await saveFutsalStats(expandedFutsalStatsMatchId, statsToSave);
+              console.log('⚽ Delayed auto-save successful');
+            }
+          } catch (error) {
+            console.error('⚽ Delayed auto-save failed:', error);
+          }
+        }, 1000); // 1000ms delay (1 second)
       }
-    }));
-
-    // Clear any existing timeout
-    if (futsalAutoSaveTimeoutRef.current) {
-      clearTimeout(futsalAutoSaveTimeoutRef.current);
-    }
-
-    // Set new timeout for auto-save
-    futsalAutoSaveTimeoutRef.current = setTimeout(() => {
-      console.log('Auto-saving futsal stats...');
-      handleSaveAllFutsalStats();
-    }, 2000); // Auto-save after 2 seconds of inactivity
+      
+      return newStats;
+    });
   };
 
   // Increment futsal stat
@@ -1461,23 +1529,48 @@ export default function AdminPanel() {
       const statsToSave = Object.entries(futsalPlayerStats)
         .filter(([playerId, stats]) => {
           // Only save if player has any non-zero stats
-          return Object.entries(stats).some(([key, value]) => 
-            !['is_starter', 'is_goalkeeper'].includes(key) && typeof value === 'number' && value > 0
+          const hasNonZeroStats = Object.entries(stats).some(([key, value]) => 
+            !['is_starter', 'is_goalkeeper', 'id', 'match_id', 'player_id', 'created_at', 'updated_at'].includes(key) && typeof value === 'number' && value > 0
           );
+          
+          if (!hasNonZeroStats) {
+            console.log(`⚽ FILTER - Skipping player ${playerId} (no non-zero stats):`, stats);
+          } else {
+            console.log(`⚽ FILTER - Including player ${playerId}:`, stats);
+          }
+          
+          return hasNonZeroStats;
         })
-        .map(([playerId, stats]) => ({
-          player_id: playerId,
-          ...stats
-        }));
+        .map(([playerId, stats]) => {
+          // Only send relevant stat fields, not id/timestamps
+          return {
+            player_id: playerId,
+            shots_on_target: stats.shots_on_target ?? 0,
+            shots_off_target: stats.shots_off_target ?? 0,
+            goals: stats.goals ?? 0,
+            assists: stats.assists ?? 0,
+            clearances: stats.clearances ?? 0,
+            fouls: stats.fouls ?? 0,
+            turnovers: stats.turnovers ?? 0,
+            shots_received: stats.is_goalkeeper ? (stats.shots_received ?? 0) : null,
+            saves: stats.is_goalkeeper ? (stats.saves ?? 0) : null,
+            minutes_played: stats.minutes_played ?? 0,
+            is_starter: !!stats.is_starter,
+            is_goalkeeper: !!stats.is_goalkeeper
+          };
+        });
 
       if (statsToSave.length === 0) {
         console.log('No futsal stats to save');
         return;
       }
 
-      console.log('Saving futsal stats:', statsToSave);
+      console.log('⚽ SAVE - Preparing to save futsal stats:', statsToSave);
+      console.log('⚽ SAVE - Player IDs being saved:', statsToSave.map(s => s.player_id));
       
       await saveFutsalStats(expandedFutsalStatsMatchId, statsToSave);
+      
+      console.log('⚽ SAVE - Successfully saved to database');
       
       addToast({
         type: 'success',
@@ -1577,8 +1670,6 @@ export default function AdminPanel() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        setLoading(true);
-        
         const [matchesData, competitionsData, facultiesData] = await Promise.all([
           getMatches(),
           getCompetitions(),
@@ -1650,10 +1741,8 @@ export default function AdminPanel() {
         setMatches(transformedMatches);
         setCompetitions(competitionsData);
         setFaculties(facultiesData);
-        setLoading(false);
       } catch (error) {
         console.error('Error fetching admin data:', error);
-        setLoading(false);
       }
     };
 

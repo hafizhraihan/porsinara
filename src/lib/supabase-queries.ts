@@ -1359,24 +1359,32 @@ export async function getPlayerBasketballStats(playerId: string): Promise<any[]>
 
 export async function getFutsalStats(matchId: string): Promise<any[]> {
   try {
-    console.log('Fetching futsal stats for match:', matchId)
+    console.log('⚽ Fetching futsal stats for match:', matchId)
     const { data, error } = await supabase
       .from('futsal_stats')
       .select('*')
       .eq('match_id', matchId)
 
     if (error) {
-      console.error('Error fetching futsal stats:', error)
-      console.error('Error details:', JSON.stringify(error, null, 2))
+      console.error('⚽ Error fetching futsal stats:', error)
+      console.error('⚽ Error details:', JSON.stringify(error, null, 2))
       // Return empty array instead of throwing - stats might not exist yet
       return []
     }
 
-    console.log('Fetched futsal stats:', data)
-    console.log('Number of stats fetched:', data?.length || 0)
+    console.log('⚽ Fetched futsal stats - COUNT:', data?.length || 0)
+    console.log('⚽ Fetched futsal stats - FULL DATA:', data)
+    
+    // Debug: show each player's stats
+    if (data && data.length > 0) {
+      data.forEach((stat: any) => {
+        console.log(`⚽ Loaded stat - player_id: ${stat.player_id}, goals: ${stat.goals}, shots: ${stat.shots_on_target}`);
+      });
+    }
+    
     return data || []
   } catch (error) {
-    console.error('Error in getFutsalStats:', error)
+    console.error('⚽ Error in getFutsalStats:', error)
     // Return empty array for graceful failure
     return []
   }
@@ -1412,23 +1420,28 @@ export async function saveFutsalStats(
     console.log('Stats data:', stats)
     
     // Use upsert (update if exists, insert if not) instead of delete + insert
-    const statsData = stats.map(stat => ({
-      match_id: matchId,
-      // Ensure all required fields have default values
-      shots_on_target: 0,
-      shots_off_target: 0,
-      goals: 0,
-      assists: 0,
-      clearances: 0,
-      fouls: 0,
-      turnovers: 0,
-      shots_received: stat.is_goalkeeper ? 0 : null,
-      saves: stat.is_goalkeeper ? 0 : null,
-      minutes_played: 0,
-      is_starter: false,
-      is_goalkeeper: false,
-      ...stat
-    }))
+    const statsData = stats.map(stat => {
+      // Convert is_goalkeeper to boolean
+      const isGoalkeeper = !!stat.is_goalkeeper;
+      
+      // Explicit field mapping - NEVER send id/timestamps (let database handle it)
+      return {
+        match_id: matchId,
+        player_id: stat.player_id,
+        shots_on_target: stat.shots_on_target ?? 0,
+        shots_off_target: stat.shots_off_target ?? 0,
+        goals: stat.goals ?? 0,
+        assists: stat.assists ?? 0,
+        clearances: stat.clearances ?? 0,
+        fouls: stat.fouls ?? 0,
+        turnovers: stat.turnovers ?? 0,
+        shots_received: isGoalkeeper ? (stat.shots_received ?? 0) : null,
+        saves: isGoalkeeper ? (stat.saves ?? 0) : null,
+        minutes_played: stat.minutes_played ?? 0,
+        is_starter: !!stat.is_starter,
+        is_goalkeeper: isGoalkeeper
+      };
+    })
     
     console.log('Upserting futsal stats:', statsData)
     

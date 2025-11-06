@@ -23,6 +23,14 @@ interface Match {
   time: string;
   location: string;
   round: string;
+  currentPeriod?: string;
+  // Set scores untuk volleyball & badminton
+  set1Score1?: number;
+  set1Score2?: number;
+  set2Score1?: number;
+  set2Score2?: number;
+  set3Score1?: number;
+  set3Score2?: number;
 }
 
 interface TableStanding {
@@ -85,7 +93,15 @@ export default function StandingsModal({ competition, isOpen, onClose }: Standin
             date: match.date,
             time: match.time,
             location: match.location,
-            round: match.round || 'Regular'
+            round: match.round || 'Regular',
+            currentPeriod: match.current_period,
+            // Set scores
+            set1Score1: match.set1_score1,
+            set1Score2: match.set1_score2,
+            set2Score1: match.set2_score1,
+            set2Score2: match.set2_score2,
+            set3Score1: match.set3_score1,
+            set3Score2: match.set3_score2
           }));
           setMatches(transformedMatches);
         } else {
@@ -277,24 +293,76 @@ export default function StandingsModal({ competition, isOpen, onClose }: Standin
                             <span className="font-medium text-gray-900">{match.faculty1.shortName}</span>
                           </div>
                           <div className="text-center">
-                            <div className="text-xl font-bold text-gray-900">
-                              {match.score1} - {match.score2}
+
+                          {/* Badminton: period indicator */}
+                          {(competition.id === 'badminton-putra' || competition.id === 'badminton-putri' || competition.id === 'badminton-mixed') && (
+                            <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'FT'}</div>
+                          )}
+
+                          {/* Volleyball: period indicator */}
+                          {(competition.id === 'volleyball') && (
+                            <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'FT'}</div>
+                          )}
+
+                          {/* Basketball: period indicator */}
+                          {(competition.id === 'basketball-putra' || competition.id === 'basketball-putri') && (
+                            <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'FT'}</div>
+                          )}
+
+                          <div className="text-xl font-bold text-gray-900">
+                            {match.score1} - {match.score2}
+                          </div>
+                          
+                          {/* Badminton: Set scores */}
+                          {(competition.id === 'badminton-putra' || competition.id === 'badminton-putri' || competition.id === 'badminton-mixed') && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              {(() => {
+                                const setScores = [];
+                                if (match.set1Score1 !== null && match.set1Score1 !== undefined && 
+                                    match.set1Score2 !== null && match.set1Score2 !== undefined) {
+                                  setScores.push(`${match.set1Score1}-${match.set1Score2}`);
+                                }
+                                if (match.set2Score1 !== null && match.set2Score1 !== undefined && 
+                                    match.set2Score2 !== null && match.set2Score2 !== undefined) {
+                                  setScores.push(`${match.set2Score1}-${match.set2Score2}`);
+                                }
+                                if (match.set3Score1 !== null && match.set3Score1 !== undefined && 
+                                    match.set3Score2 !== null && match.set3Score2 !== undefined) {
+                                  setScores.push(`${match.set3Score1}-${match.set3Score2}`);
+                                }
+                                return setScores.length > 0 ? setScores.join(' | ') : '';
+                              })()}
                             </div>
-                            {match.status === 'completed' && (
-                              <div className="text-xs font-semibold text-black mt-1 flex items-center justify-center space-x-1">
-                                <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.score1 > match.score2 ? match.faculty1.id : match.faculty2.id).split(' ')[0]}`}></div>
-                                <span>{match.score1 > match.score2 ? match.faculty1.shortName : match.faculty2.shortName} Wins!</span>
-                              </div>
-                            )}
-                            {match.status === 'ongoing' && (
-                              <div className="mt-2">
-                                <div className="w-16 h-1 bg-gray-200 rounded-full mx-auto overflow-hidden">
-                                  <div className="w-4 h-1 bg-red-500 rounded-full" style={{
-                                    animation: 'moveRight 2s linear infinite'
-                                  }}></div>
-                                </div>
-                              </div>
-                            )}
+                          )}
+
+                          {/* Volleyball: Set scores */}
+                          {(competition.id === 'volleyball') && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              {(() => {
+                                const setScores = [];
+                                if (match.set1Score1 !== null && match.set1Score1 !== undefined && 
+                                    match.set1Score2 !== null && match.set1Score2 !== undefined) {
+                                  setScores.push(`${match.set1Score1}-${match.set1Score2}`);
+                                }
+                                if (match.set2Score1 !== null && match.set2Score1 !== undefined && 
+                                    match.set2Score2 !== null && match.set2Score2 !== undefined) {
+                                  setScores.push(`${match.set2Score1}-${match.set2Score2}`);
+                                }
+                                if (match.set3Score1 !== null && match.set3Score1 !== undefined && 
+                                    match.set3Score2 !== null && match.set3Score2 !== undefined) {
+                                  setScores.push(`${match.set3Score1}-${match.set3Score2}`);
+                                }
+                                return setScores.length > 0 ? setScores.join(' | ') : '';
+                              })()}
+                            </div>
+                          )}
+                          
+                          {match.status === 'completed' && (
+                            <div className="text-xs font-semibold text-black mt-1 flex items-center justify-center space-x-1">
+                              <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.score1 > match.score2 ? match.faculty1.id : match.faculty2.id).split(' ')[0]}`}></div>
+                              <span>{match.score1 > match.score2 ? match.faculty1.shortName : match.faculty2.shortName} Wins!</span>
+                            </div>
+                          )}
                           </div>
                           <div className="flex items-center space-x-2">
                             <span className="font-medium text-gray-900">{match.faculty2.shortName}</span>
@@ -348,6 +416,22 @@ export default function StandingsModal({ competition, isOpen, onClose }: Standin
                             <span className="font-medium text-gray-900">{match.faculty1.shortName}</span>
                           </div>
                         <div className="text-center">
+
+                          {/* Badminton: period indicator */}
+                          {(competition.id === 'badminton-putra' || competition.id === 'badminton-putri' || competition.id === 'badminton-mixed') && (
+                            <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'FT'}</div>
+                          )}
+
+                          {/* Volleyball: period indicator */}
+                          {(competition.id === 'volleyball') && (
+                            <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'FT'}</div>
+                          )}
+
+                          {/* Basketball: period indicator */}
+                          {(competition.id === 'basketball-putra' || competition.id === 'basketball-putri') && (
+                            <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'FT'}</div>
+                          )}
+
                           <div className="text-xl font-bold text-gray-900">
                             {match.score1} - {match.score2}
                           </div>
@@ -411,6 +495,22 @@ export default function StandingsModal({ competition, isOpen, onClose }: Standin
                           <span className="font-medium text-gray-900">{match.faculty1.shortName}</span>
                         </div>
                         <div className="text-center">
+                          
+                          {/* Badminton: period indicator */}
+                          {(competition.id === 'badminton-putra' || competition.id === 'badminton-putri' || competition.id === 'badminton-mixed') && (
+                            <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'FT'}</div>
+                          )}
+
+                          {/* Volleyball: period indicator */}
+                          {(competition.id === 'volleyball') && (
+                            <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'FT'}</div>
+                          )}
+
+                          {/* Basketball: period indicator */}
+                          {(competition.id === 'basketball-putra' || competition.id === 'basketball-putri') && (
+                            <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'FT'}</div>
+                          )}
+
                           <div className="text-xl font-bold text-gray-900">
                             {match.score1} - {match.score2}
                           </div>
@@ -473,6 +573,22 @@ export default function StandingsModal({ competition, isOpen, onClose }: Standin
                           <span className="font-medium text-gray-900">{match.faculty1.shortName}</span>
                         </div>
                         <div className="text-center">
+
+                          {/* Badminton: period indicator */}
+                          {(competition.id === 'badminton-putra' || competition.id === 'badminton-putri' || competition.id === 'badminton-mixed') && (
+                            <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'FT'}</div>
+                          )}
+
+                          {/* Volleyball: period indicator */}
+                          {(competition.id === 'volleyball') && (
+                            <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'FT'}</div>
+                          )}
+
+                          {/* Basketball: period indicator */}
+                          {(competition.id === 'basketball-putra' || competition.id === 'basketball-putri') && (
+                            <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'FT'}</div>
+                          )}
+
                           <div className="text-xl font-bold text-gray-900">
                             {match.score1} - {match.score2}
                           </div>

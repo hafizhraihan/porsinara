@@ -3519,33 +3519,26 @@ export default function AdminPanel() {
                             <div className="flex items-center justify-between mb-4">
                               <h4 className="text-lg font-semibold text-gray-900">🏐 Volleyball Set Scores</h4>
                               <div className="flex space-x-1">
-                                {[1, 2, 3, 4, 5].map((setNumber) => (
+                              {(() => {
+                                  const currentMatch = matches.find(m => m.id === expandedVolleyballMatchId);
+                                  return ['Set 1', 'Set 2', 'Set 3', 'Set 4', 'Set 5', 'FT'].map((period) => (
                                   <button
-                                    key={setNumber}
+                                      key={period}
                                     onClick={() => {
-                                      setCurrentSet(setNumber);
-                                      saveCurrentSetToStorage(setNumber);
-                                      
-                                      // Update currentPeriod in database
-                                      if (expandedVolleyballMatchId) {
-                                        const period = `Set ${setNumber}`;
-                                        handlePeriodUpdate(expandedVolleyballMatchId, period);
-                                        console.log('🏐 Updated currentPeriod to:', period);
-                                      }
-                                      
-                                      if (expandedVolleyballMatchId) {
-                                        loadVolleyballSetScores(expandedVolleyballMatchId);
+                                        if (expandedVolleyballMatchId) {
+                                          handlePeriodUpdate(expandedVolleyballMatchId, period);
                                       }
                                     }}
                                     className={`px-3 py-1 text-sm font-medium rounded border transition-colors ${
-                                      currentSet === setNumber
+                                        currentMatch?.currentPeriod === period
                                         ? 'bg-blue-500 text-white border-blue-500'
                                         : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                                     }`}
                                   >
-                                    Set {setNumber}
+                                      {period}
                                   </button>
-                                ))}
+                                  ));
+                                })()}
                               </div>
                             </div>
                             
@@ -3625,33 +3618,26 @@ export default function AdminPanel() {
                             <div className="flex items-center justify-between mb-4">
                               <h4 className="text-lg font-semibold text-gray-900">🏸 Badminton Set Scores</h4>
                               <div className="flex space-x-1">
-                                {[1, 2, 3].map((setNumber) => (
+                              {(() => {
+                                  const currentMatch = matches.find(m => m.id === expandedBadmintonMatchId);
+                                  return ['Set 1', 'Set 2', 'Set 3', 'FT'].map((period) => (
                                   <button
-                                    key={setNumber}
+                                    key={period}
                                     onClick={() => {
-                                      setCurrentBadmintonSet(setNumber);
-                                      saveCurrentSetToStorage(setNumber);
-                                      
-                                      // Update currentPeriod in database
-                                      if (expandedBadmintonMatchId) {
-                                        const period = `Set ${setNumber}`;
-                                        handlePeriodUpdate(expandedBadmintonMatchId, period);
-                                        console.log('🏸 Updated currentPeriod to:', period);
-                                      }
-                                      
-                                      if (expandedBadmintonMatchId) {
-                                        loadBadmintonSetScores(expandedBadmintonMatchId);
-                                      }
+                                        if (expandedBadmintonMatchId) {
+                                          handlePeriodUpdate(expandedBadmintonMatchId, period);
+                                        }
                                     }}
                                     className={`px-3 py-1 text-sm font-medium rounded border transition-colors ${
-                                      currentBadmintonSet === setNumber
-                                        ? 'bg-blue-500 text-white border-blue-500'
+                                        currentMatch?.currentPeriod === period
+                                          ? 'bg-blue-500 text-white border-blue-500'
                                         : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                                     }`}
                                   >
-                                    Set {setNumber}
+                                    {period}
                                   </button>
-                                ))}
+                                  ));
+                                })()}
                               </div>
                             </div>
                             

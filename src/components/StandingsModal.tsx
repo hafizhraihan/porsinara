@@ -31,6 +31,10 @@ interface Match {
   set2Score2?: number;
   set3Score1?: number;
   set3Score2?: number;
+  set4Score1?: number;  
+  set4Score2?: number;  
+  set5Score1?: number;  
+  set5Score2?: number;  
 }
 
 interface TableStanding {

@@ -1406,6 +1406,10 @@ export async function saveFutsalStats(
     fouls?: number
     // Offensive statistics
     turnovers?: number
+    passing?: number
+    dribble?: number
+    dribble_success?: number
+    intercept?: number
     // Goalkeeper statistics (NULL for field players)
     shots_received?: number
     saves?: number
@@ -1435,6 +1439,10 @@ export async function saveFutsalStats(
         clearances: stat.clearances ?? 0,
         fouls: stat.fouls ?? 0,
         turnovers: stat.turnovers ?? 0,
+        passing: stat.passing ?? 0,
+        dribble: stat.dribble ?? 0,
+        dribble_success: stat.dribble_success ?? 0,
+        intercept: stat.intercept ?? 0,
         shots_received: isGoalkeeper ? (stat.shots_received ?? 0) : null,
         saves: isGoalkeeper ? (stat.saves ?? 0) : null,
         minutes_played: stat.minutes_played ?? 0,
@@ -1482,6 +1490,10 @@ export async function updateFutsalStat(
     fouls?: number
     // Offensive statistics
     turnovers?: number
+    passing?: number
+    dribble?: number
+    dribble_success?: number
+    intercept?: number
     // Goalkeeper statistics
     shots_received?: number
     saves?: number

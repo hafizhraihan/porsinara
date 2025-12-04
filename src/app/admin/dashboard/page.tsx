@@ -82,7 +82,7 @@ export default function AdminPanel() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [faculties, setFaculties] = useState<Faculty[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
   const [syncingMedals, setSyncingMedals] = useState(false);
   const { addToast } = useToast();
@@ -884,11 +884,13 @@ export default function AdminPanel() {
       setTeam2Players([]);
       setPlayerStats({});
     } else {
-      // Expand - load both teams' players
-      setExpandedMatchId(matchId);
-      
+      // Expand - set state first for instant UI response
       const currentMatch = matches.find(m => m.id === matchId);
       if (currentMatch) {
+        // Set expanded state immediately
+        setExpandedMatchId(matchId);
+        
+        // Load data in background
         try {
           // Load both teams' players in parallel
           const [team1, team2, existingStats] = await Promise.all([
@@ -1267,8 +1269,11 @@ export default function AdminPanel() {
 
   // Toggle futsal stats expand (combines stats + penalty scores)
   const toggleFutsalStatsExpand = async (matchId: string) => {
+    console.log('⚽ toggleFutsalStatsExpand called for match:', matchId);
+    
     if (expandedFutsalStatsMatchId === matchId) {
       // Collapse
+      console.log('⚽ Collapsing futsal stats');
       setExpandedFutsalStatsMatchId(null);
       setFutsalTeam1Players([]);
       setFutsalTeam2Players([]);
@@ -1277,19 +1282,27 @@ export default function AdminPanel() {
       setExpandedFutsalMatchId(null);
       setFutsalPenaltyScores({});
     } else {
-      // Expand - load both teams' players and penalty scores
-      setExpandedFutsalStatsMatchId(matchId);
-      setExpandedFutsalMatchId(matchId);
-      
+      // Expand - set state first for instant UI response
+      console.log('⚽ Expanding futsal stats');
       const currentMatch = matches.find(m => m.id === matchId);
+      console.log('⚽ Current match found:', currentMatch);
+      
       if (currentMatch) {
+        // Set expanded state immediately
+        setExpandedFutsalStatsMatchId(matchId);
+        setExpandedFutsalMatchId(matchId);
+        
+        // Load data in background
         try {
+          console.log('⚽ Loading teams and stats for match:', matchId);
           // Load both teams' players and existing stats in parallel
           const [team1, team2, existingStats] = await Promise.all([
             getPlayersByFaculty(currentMatch.faculty1Id),
             getPlayersByFaculty(currentMatch.faculty2Id),
             getFutsalStats(matchId)
           ]);
+          
+          console.log('⚽ Teams loaded - Team1:', team1.length, 'Team2:', team2.length);
           
           setFutsalTeam1Players(team1);
           setFutsalTeam2Players(team2);
@@ -1299,6 +1312,13 @@ export default function AdminPanel() {
           
           [...team1, ...team2].forEach(player => {
             const existingStat = existingStats.find((s: any) => s.player_id === player.id);
+            
+            // Debug log
+            if (existingStat) {
+              console.log(`⚽ Loading existing stat for player ${player.name}:`, existingStat);
+            }
+            
+            // Use same pattern as basketball: use existingStat directly if exists, or defaults
             initialStats[player.id] = existingStat || {
               shots_on_target: 0,
               shots_off_target: 0,
@@ -1307,6 +1327,10 @@ export default function AdminPanel() {
               clearances: 0,
               fouls: 0,
               turnovers: 0,
+              passing: 0,
+              dribble: 0,
+              dribble_success: 0,
+              intercept: 0,
               shots_received: 0,
               saves: 0,
               minutes_played: 0,
@@ -1314,6 +1338,11 @@ export default function AdminPanel() {
               is_goalkeeper: false
             };
           });
+          
+          console.log('⚽ LOAD - Total existing stats loaded:', existingStats.length);
+          console.log('⚽ LOAD - Player IDs from database:', existingStats.map((s: any) => s.player_id));
+          console.log('⚽ LOAD - Player IDs from teams:', [...team1, ...team2].map(p => p.id));
+          console.log('⚽ LOAD - Initialized stats for players:', Object.keys(initialStats).length);
           
           setFutsalPlayerStats(initialStats);
           
@@ -1338,24 +1367,71 @@ export default function AdminPanel() {
 
   // Update player futsal stat
   const updateFutsalPlayerStat = (playerId: string, field: string, value: number) => {
-    setFutsalPlayerStats(prevStats => ({
-      ...prevStats,
-      [playerId]: {
-        ...prevStats[playerId],
-        [field]: Math.max(0, value) // Ensure non-negative values
+    setFutsalPlayerStats(prevStats => {
+      const newStats = {
+        ...prevStats,
+        [playerId]: {
+          ...prevStats[playerId],
+          [field]: Math.max(0, value) // Ensure non-negative values
+        }
+      };
+
+      // Delay auto-save to allow all updates to complete
+      if (expandedFutsalStatsMatchId) {
+        // Clear existing timeout
+        if (futsalAutoSaveTimeoutRef.current) {
+          clearTimeout(futsalAutoSaveTimeoutRef.current);
+        }
+        
+        // Set new timeout for auto-save with newStats passed directly
+        futsalAutoSaveTimeoutRef.current = setTimeout(async () => {
+          try {
+            console.log(`⚽ Delayed auto-saving futsal stats for match ${expandedFutsalStatsMatchId}`);
+            console.log('⚽ Current futsalPlayerStats:', newStats);
+            
+            // Prepare stats using newStats directly (not from state)
+            const statsToSave = Object.entries(newStats)
+              .filter(([playerId, stats]) => {
+                const hasNonZeroStats = Object.entries(stats).some(([key, value]) => 
+                  !['is_starter', 'is_goalkeeper', 'id', 'match_id', 'player_id', 'created_at', 'updated_at'].includes(key) && typeof value === 'number' && value > 0
+                );
+                return hasNonZeroStats;
+              })
+              .map(([playerId, stats]) => {
+                return {
+                  player_id: playerId,
+                  shots_on_target: stats.shots_on_target ?? 0,
+                  shots_off_target: stats.shots_off_target ?? 0,
+                  goals: stats.goals ?? 0,
+                  assists: stats.assists ?? 0,
+                  clearances: stats.clearances ?? 0,
+                  fouls: stats.fouls ?? 0,
+                  turnovers: stats.turnovers ?? 0,
+                  passing: stats.passing ?? 0,
+                  dribble: stats.dribble ?? 0,
+                  dribble_success: stats.dribble_success ?? 0,
+                  intercept: stats.intercept ?? 0,
+                  shots_received: stats.is_goalkeeper ? (stats.shots_received ?? 0) : null,
+                  saves: stats.is_goalkeeper ? (stats.saves ?? 0) : null,
+                  minutes_played: stats.minutes_played ?? 0,
+                  is_starter: !!stats.is_starter,
+                  is_goalkeeper: !!stats.is_goalkeeper
+                };
+              });
+            
+            if (statsToSave.length > 0) {
+              console.log('⚽ Stats to save:', statsToSave);
+              await saveFutsalStats(expandedFutsalStatsMatchId, statsToSave);
+              console.log('⚽ Delayed auto-save successful');
+            }
+          } catch (error) {
+            console.error('⚽ Delayed auto-save failed:', error);
+          }
+        }, 1000); // 1000ms delay (1 second)
       }
-    }));
-
-    // Clear any existing timeout
-    if (futsalAutoSaveTimeoutRef.current) {
-      clearTimeout(futsalAutoSaveTimeoutRef.current);
-    }
-
-    // Set new timeout for auto-save
-    futsalAutoSaveTimeoutRef.current = setTimeout(() => {
-      console.log('Auto-saving futsal stats...');
-      handleSaveAllFutsalStats();
-    }, 2000); // Auto-save after 2 seconds of inactivity
+      
+      return newStats;
+    });
   };
 
   // Increment futsal stat
@@ -1461,23 +1537,52 @@ export default function AdminPanel() {
       const statsToSave = Object.entries(futsalPlayerStats)
         .filter(([playerId, stats]) => {
           // Only save if player has any non-zero stats
-          return Object.entries(stats).some(([key, value]) => 
-            !['is_starter', 'is_goalkeeper'].includes(key) && typeof value === 'number' && value > 0
+          const hasNonZeroStats = Object.entries(stats).some(([key, value]) => 
+            !['is_starter', 'is_goalkeeper', 'id', 'match_id', 'player_id', 'created_at', 'updated_at'].includes(key) && typeof value === 'number' && value > 0
           );
+          
+          if (!hasNonZeroStats) {
+            console.log(`⚽ FILTER - Skipping player ${playerId} (no non-zero stats):`, stats);
+          } else {
+            console.log(`⚽ FILTER - Including player ${playerId}:`, stats);
+          }
+          
+          return hasNonZeroStats;
         })
-        .map(([playerId, stats]) => ({
-          player_id: playerId,
-          ...stats
-        }));
+        .map(([playerId, stats]) => {
+          // Only send relevant stat fields, not id/timestamps
+          return {
+            player_id: playerId,
+            shots_on_target: stats.shots_on_target ?? 0,
+            shots_off_target: stats.shots_off_target ?? 0,
+            goals: stats.goals ?? 0,
+            assists: stats.assists ?? 0,
+            clearances: stats.clearances ?? 0,
+            fouls: stats.fouls ?? 0,
+            turnovers: stats.turnovers ?? 0,
+            passing: stats.passing ?? 0,
+            dribble: stats.dribble ?? 0,
+            dribble_success: stats.dribble_success ?? 0,
+            intercept: stats.intercept ?? 0,
+            shots_received: stats.is_goalkeeper ? (stats.shots_received ?? 0) : null,
+            saves: stats.is_goalkeeper ? (stats.saves ?? 0) : null,
+            minutes_played: stats.minutes_played ?? 0,
+            is_starter: !!stats.is_starter,
+            is_goalkeeper: !!stats.is_goalkeeper
+          };
+        });
 
       if (statsToSave.length === 0) {
         console.log('No futsal stats to save');
         return;
       }
 
-      console.log('Saving futsal stats:', statsToSave);
+      console.log('⚽ SAVE - Preparing to save futsal stats:', statsToSave);
+      console.log('⚽ SAVE - Player IDs being saved:', statsToSave.map(s => s.player_id));
       
       await saveFutsalStats(expandedFutsalStatsMatchId, statsToSave);
+      
+      console.log('⚽ SAVE - Successfully saved to database');
       
       addToast({
         type: 'success',
@@ -1577,8 +1682,6 @@ export default function AdminPanel() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        setLoading(true);
-        
         const [matchesData, competitionsData, facultiesData] = await Promise.all([
           getMatches(),
           getCompetitions(),
@@ -1650,10 +1753,8 @@ export default function AdminPanel() {
         setMatches(transformedMatches);
         setCompetitions(competitionsData);
         setFaculties(facultiesData);
-        setLoading(false);
       } catch (error) {
         console.error('Error fetching admin data:', error);
-        setLoading(false);
       }
     };
 
@@ -2765,6 +2866,8 @@ export default function AdminPanel() {
                                     <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-blue-50" colSpan={2}>3PT</th>
                                     <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-purple-50" colSpan={2}>Rebound</th>
                                     <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-pink-50">Assists</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-orange-50">Steals</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-indigo-50">Blocks</th>
                                     <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-gray-50">Turnovers</th>
                                   </tr>
                                   <tr className="bg-gray-50">
@@ -2778,6 +2881,8 @@ export default function AdminPanel() {
                                     <th className="border px-1 py-1 text-xs text-gray-600 bg-purple-50">Offensive</th>
                                     <th className="border px-1 py-1 text-xs text-gray-600 bg-purple-50">Defensive</th>
                                     <th className="border px-1 py-1 text-xs text-gray-600 bg-pink-50"></th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-orange-50"></th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-indigo-50"></th>
                                     <th className="border px-1 py-1 text-xs text-gray-600 bg-gray-50"></th>
                                   </tr>
                                 </thead>
@@ -2785,7 +2890,7 @@ export default function AdminPanel() {
                                   {/* Team 1 Players */}
                                   <tr>
                                     <td 
-                                      colSpan={11} 
+                                      colSpan={13} 
                                       className={`border px-2 py-1 text-sm font-semibold text-white ${getFacultyColorClasses(match.faculty1Id).split(' ')[0]}`}
                                     >
                                       {faculties.find(f => f.id === match.faculty1Id)?.name || 'Team 1'} ({team1Players.length} players)
@@ -2793,7 +2898,7 @@ export default function AdminPanel() {
                                   </tr>
                                   {team1Players.length === 0 ? (
                                     <tr>
-                                      <td colSpan={11} className="border px-2 py-2 text-xs text-gray-500 text-center">
+                                      <td colSpan={13} className="border px-2 py-2 text-xs text-gray-500 text-center">
                                         No players found for this faculty
                                       </td>
                                     </tr>
@@ -2810,82 +2915,98 @@ export default function AdminPanel() {
                                           </td>
                                           
                                           {/* Free Throws */}
-                                          <td className="border px-1 py-1 bg-yellow-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'free_throw_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.free_throw_attempt || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'free_throw_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-yellow-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'free_throw_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.free_throw_attempt || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'free_throw_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
-                                          <td className="border px-1 py-1 bg-yellow-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'free_throw_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.free_throw_made || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'free_throw_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-yellow-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'free_throw_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.free_throw_made || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'free_throw_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* 2-Point */}
-                                          <td className="border px-1 py-1 bg-green-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'two_point_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.two_point_attempt || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'two_point_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-green-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'two_point_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.two_point_attempt || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'two_point_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
-                                          <td className="border px-1 py-1 bg-green-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'two_point_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.two_point_made || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'two_point_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-green-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'two_point_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.two_point_made || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'two_point_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* 3-Point */}
-                                          <td className="border px-1 py-1 bg-blue-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'three_point_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.three_point_attempt || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'three_point_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-blue-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'three_point_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.three_point_attempt || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'three_point_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
-                                          <td className="border px-1 py-1 bg-blue-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'three_point_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.three_point_made || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'three_point_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-blue-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'three_point_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.three_point_made || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'three_point_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* Rebounds */}
-                                          <td className="border px-1 py-1 bg-purple-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'offensive_rebound')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.offensive_rebound || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'offensive_rebound')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-purple-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'offensive_rebound')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.offensive_rebound || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'offensive_rebound')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
-                                          <td className="border px-1 py-1 bg-purple-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'defensive_rebound')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.defensive_rebound || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'defensive_rebound')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-purple-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'defensive_rebound')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.defensive_rebound || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'defensive_rebound')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* Assists */}
-                                          <td className="border px-1 py-1 bg-pink-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'assists')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.assists || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'assists')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-pink-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'assists')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.assists || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'assists')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
-                                          <td className="border px-1 py-1 bg-gray-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'turnovers')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.turnovers || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'turnovers')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          {/* Steals */}
+                                          <td className="border px-0.5 py-0.5 bg-orange-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'steals')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.steals || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'steals')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
+                                            </div>
+                                          </td>
+                                          {/* Blocks */}
+                                          <td className="border px-0.5 py-0.5 bg-indigo-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'blocks')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.blocks || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'blocks')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-0.5 py-0.5 bg-gray-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'turnovers')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.turnovers || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'turnovers')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                         </tr>
@@ -2896,7 +3017,7 @@ export default function AdminPanel() {
                                   {/* Team 2 Players */}
                                   <tr>
                                     <td 
-                                      colSpan={11} 
+                                      colSpan={13} 
                                       className={`border px-2 py-1 text-sm font-semibold text-white ${getFacultyColorClasses(match.faculty2Id).split(' ')[0]}`}
                                     >
                                       {faculties.find(f => f.id === match.faculty2Id)?.name || 'Team 2'} ({team2Players.length} players)
@@ -2904,7 +3025,7 @@ export default function AdminPanel() {
                                   </tr>
                                   {team2Players.length === 0 ? (
                                     <tr>
-                                      <td colSpan={11} className="border px-2 py-2 text-xs text-gray-500 text-center">
+                                      <td colSpan={13} className="border px-2 py-2 text-xs text-gray-500 text-center">
                                         No players found for this faculty
                                       </td>
                                     </tr>
@@ -2921,82 +3042,98 @@ export default function AdminPanel() {
                                           </td>
                                           
                                           {/* Free Throws */}
-                                          <td className="border px-1 py-1 bg-yellow-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'free_throw_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.free_throw_attempt || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'free_throw_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-yellow-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'free_throw_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.free_throw_attempt || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'free_throw_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
-                                          <td className="border px-1 py-1 bg-yellow-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'free_throw_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.free_throw_made || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'free_throw_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-yellow-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'free_throw_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.free_throw_made || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'free_throw_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* 2-Point */}
-                                          <td className="border px-1 py-1 bg-green-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'two_point_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.two_point_attempt || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'two_point_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-green-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'two_point_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.two_point_attempt || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'two_point_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
-                                          <td className="border px-1 py-1 bg-green-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'two_point_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.two_point_made || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'two_point_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-green-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'two_point_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.two_point_made || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'two_point_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* 3-Point */}
-                                          <td className="border px-1 py-1 bg-blue-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'three_point_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.three_point_attempt || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'three_point_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-blue-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'three_point_attempt')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.three_point_attempt || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'three_point_attempt')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
-                                          <td className="border px-1 py-1 bg-blue-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'three_point_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.three_point_made || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'three_point_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-blue-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'three_point_made')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.three_point_made || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'three_point_made')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* Rebounds */}
-                                          <td className="border px-1 py-1 bg-purple-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'offensive_rebound')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.offensive_rebound || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'offensive_rebound')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-purple-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'offensive_rebound')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.offensive_rebound || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'offensive_rebound')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
-                                          <td className="border px-1 py-1 bg-purple-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'defensive_rebound')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.defensive_rebound || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'defensive_rebound')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-purple-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'defensive_rebound')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.defensive_rebound || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'defensive_rebound')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* Assists */}
-                                          <td className="border px-1 py-1 bg-pink-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'assists')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.assists || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'assists')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-pink-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'assists')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.assists || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'assists')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
-                                          <td className="border px-1 py-1 bg-gray-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementStat(player.id, 'turnovers')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.turnovers || 0}</span>
-                                              <button onClick={() => incrementStat(player.id, 'turnovers')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          {/* Steals */}
+                                          <td className="border px-0.5 py-0.5 bg-orange-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'steals')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.steals || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'steals')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
+                                            </div>
+                                          </td>
+                                          {/* Blocks */}
+                                          <td className="border px-0.5 py-0.5 bg-indigo-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'blocks')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.blocks || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'blocks')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
+                                            </div>
+                                          </td>
+                                          <td className="border px-0.5 py-0.5 bg-gray-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementStat(player.id, 'turnovers')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.turnovers || 0}</span>
+                                              <button onClick={() => incrementStat(player.id, 'turnovers')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                         </tr>
@@ -3030,7 +3167,7 @@ export default function AdminPanel() {
                     {/* Expandable Futsal Stats Row */}
                     {isFutsalMatch(match) && expandedFutsalStatsMatchId === match.id && (
                       <tr>
-                        <td colSpan={8} className="px-6 py-6 bg-gray-50">
+                        <td colSpan={10} className="px-6 py-6 bg-gray-50">
                           <div className="w-full">
                             <div className="flex items-center justify-between mb-4">
                               <h4 className="text-lg font-semibold text-gray-900">⚽ Input Player Stats</h4>
@@ -3115,35 +3252,42 @@ export default function AdminPanel() {
                               <table className="w-full border-collapse bg-white">
                                 <thead>
                                   <tr className="bg-gray-100">
-                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900">Player</th>
-                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-yellow-50" colSpan={2}>Shots</th>
-                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-green-50">Goals</th>
-                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-blue-50">Assists</th>
-                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-purple-50">Clearances</th>
-                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-pink-50">Fouls</th>
-                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-gray-50">Turnovers</th>
-                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-orange-50" colSpan={3}>Goalkeeper</th>
+                                    <th className="border px-1 py-1 text-[10px] font-semibold text-gray-900">Player</th>
+                                    <th className="border px-1 py-1 text-[10px] font-semibold text-gray-900 bg-yellow-50" colSpan={2}>Shots</th>
+                                    <th className="border px-1 py-1 text-[10px] font-semibold text-gray-900 bg-green-50">Goals</th>
+                                    <th className="border px-1 py-1 text-[10px] font-semibold text-gray-900 bg-blue-50">Assists</th>
+                                    <th className="border px-1 py-1 text-[10px] font-semibold text-gray-900 bg-purple-50">Clearances</th>
+                                    <th className="border px-1 py-1 text-[10px] font-semibold text-gray-900 bg-pink-50">Fouls</th>
+                                    <th className="border px-1 py-1 text-[10px] font-semibold text-gray-900 bg-orange-50">Passing</th>
+                                    <th className="border px-1 py-1 text-[10px] font-semibold text-gray-900 bg-blue-50" colSpan={2}>Dribble</th>
+                                    <th className="border px-1 py-1 text-[10px] font-semibold text-gray-900 bg-indigo-50">Intercept</th>
+                                    <th className="border px-1 py-1 text-[10px] font-semibold text-gray-900 bg-gray-50">Turnovers</th>
+                                    <th className="border px-1 py-1 text-[10px] font-semibold text-gray-900 bg-orange-50" colSpan={3}>Goalkeeper</th>
                                     
                                   </tr>
                                   <tr className="bg-gray-50">
-                                    <th className="border px-1 py-1 text-xs text-gray-600"></th>
-                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-yellow-50">On Target</th>
-                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-yellow-50">Off Target</th>
-                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-green-50"></th>
-                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-blue-50"></th>
-                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-purple-50"></th>
-                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-pink-50"></th>
-                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-gray-50"></th>
-                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-orange-50">Shots Received</th>
-                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-orange-50">Saves</th>
-                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-red-50">GK</th>
+                                    <th className="border px-0.5 py-0.5 text-[9px] text-gray-600"></th>
+                                    <th className="border px-0.5 py-0.5 text-[9px] text-gray-600 bg-yellow-50">On Target</th>
+                                    <th className="border px-0.5 py-0.5 text-[9px] text-gray-600 bg-yellow-50">Off Target</th>
+                                    <th className="border px-0.5 py-0.5 text-[9px] text-gray-600 bg-green-50"></th>
+                                    <th className="border px-0.5 py-0.5 text-[9px] text-gray-600 bg-blue-50"></th>
+                                    <th className="border px-0.5 py-0.5 text-[9px] text-gray-600 bg-purple-50"></th>
+                                    <th className="border px-0.5 py-0.5 text-[9px] text-gray-600 bg-pink-50"></th>
+                                    <th className="border px-0.5 py-0.5 text-[9px] text-gray-600 bg-orange-50"></th>
+                                    <th className="border px-0.5 py-0.5 text-[9px] text-gray-600 bg-blue-50">Dribble Attempts</th>
+                                    <th className="border px-0.5 py-0.5 text-[9px] text-gray-600 bg-blue-50">Dribble Success</th>
+                                    <th className="border px-0.5 py-0.5 text-[9px] text-gray-600 bg-indigo-50"></th>
+                                    <th className="border px-0.5 py-0.5 text-[9px] text-gray-600 bg-gray-50"></th>
+                                    <th className="border px-0.5 py-0.5 text-[9px] text-gray-600 bg-orange-50">Shots Received</th>
+                                    <th className="border px-0.5 py-0.5 text-[9px] text-gray-600 bg-orange-50">Saves</th>
+                                    <th className="border px-0.5 py-0.5 text-[9px] text-gray-600 bg-red-50">GK</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {/* Team 1 Players */}
                                   <tr>
                                     <td 
-                                      colSpan={11} 
+                                      colSpan={15} 
                                       className={`border px-2 py-1 text-sm font-semibold text-white ${getFacultyColorClasses(match.faculty1Id).split(' ')[0]}`}
                                     >
                                       {faculties.find(f => f.id === match.faculty1Id)?.name || 'Team 1'} ({futsalTeam1Players.length} players)
@@ -3151,7 +3295,7 @@ export default function AdminPanel() {
                                   </tr>
                                   {futsalTeam1Players.length === 0 ? (
                                     <tr>
-                                      <td colSpan={10} className="border px-2 py-2 text-xs text-gray-500 text-center">
+                                      <td colSpan={15} className="border px-1 py-1 text-[10px] text-gray-500 text-center">
                                         No players found for this faculty
                                       </td>
                                     </tr>
@@ -3161,102 +3305,138 @@ export default function AdminPanel() {
                                       
                                       return (
                                         <tr key={player.id} className="hover:bg-blue-50">
-                                          <td className="border px-2 py-2 text-xs text-gray-900">
+                                          <td className="border px-1 py-0.5 text-[10px] text-gray-900">
                                             <div className="font-medium">{player.name}</div>
                                             <div className="text-gray-600">#{player.jersey_number}</div>
                                           </td>
                                           
                                           {/* Shots On Target */}
-                                          <td className="border px-1 py-1 bg-yellow-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementFutsalStat(player.id, 'shots_on_target')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.shots_on_target || 0}</span>
-                                              <button onClick={() => incrementFutsalStat(player.id, 'shots_on_target')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-yellow-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'shots_on_target')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.shots_on_target || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'shots_on_target')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* Shots Off Target */}
-                                          <td className="border px-1 py-1 bg-yellow-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementFutsalStat(player.id, 'shots_off_target')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.shots_off_target || 0}</span>
-                                              <button onClick={() => incrementFutsalStat(player.id, 'shots_off_target')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-yellow-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'shots_off_target')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.shots_off_target || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'shots_off_target')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* Goals */}
-                                          <td className="border px-1 py-1 bg-green-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementFutsalStat(player.id, 'goals')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.goals || 0}</span>
-                                              <button onClick={() => incrementFutsalStat(player.id, 'goals')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-green-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'goals')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.goals || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'goals')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* Assists */}
-                                          <td className="border px-1 py-1 bg-blue-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementFutsalStat(player.id, 'assists')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.assists || 0}</span>
-                                              <button onClick={() => incrementFutsalStat(player.id, 'assists')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-blue-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'assists')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.assists || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'assists')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* Clearances */}
-                                          <td className="border px-1 py-1 bg-purple-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementFutsalStat(player.id, 'clearances')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.clearances || 0}</span>
-                                              <button onClick={() => incrementFutsalStat(player.id, 'clearances')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-purple-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'clearances')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.clearances || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'clearances')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* Fouls */}
-                                          <td className="border px-1 py-1 bg-pink-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementFutsalStat(player.id, 'fouls')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.fouls || 0}</span>
-                                              <button onClick={() => incrementFutsalStat(player.id, 'fouls')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-pink-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'fouls')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.fouls || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'fouls')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
+                                          {/* Passing */}
+                                          <td className="border px-0.5 py-0.5 bg-orange-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'passing')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.passing || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'passing')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
+                                            </div>
+                                          </td>
+
+                                          {/* Dribble Attempts */}
+                                          <td className="border px-0.5 py-0.5 bg-blue-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'dribble')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.dribble || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'dribble')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
+                                            </div>
+                                          </td>
+
+                                          {/* Dribble Success */}
+                                          <td className="border px-0.5 py-0.5 bg-blue-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'dribble_success')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.dribble_success || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'dribble_success')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
+                                            </div>
+                                          </td>
+
+                                          {/* Intercept */}
+                                          <td className="border px-0.5 py-0.5 bg-indigo-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'intercept')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.intercept || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'intercept')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
+                                            </div>
+                                          </td>
+
                                           {/* Turnovers */}
-                                          <td className="border px-1 py-1 bg-gray-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementFutsalStat(player.id, 'turnovers')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.turnovers || 0}</span>
-                                              <button onClick={() => incrementFutsalStat(player.id, 'turnovers')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-gray-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'turnovers')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.turnovers || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'turnovers')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* Shots Received (Goalkeeper) */}
-                                          <td className="border px-1 py-1 bg-orange-50">
+                                          <td className="border px-0.5 py-0.5 bg-orange-50">
                                             {stats.is_goalkeeper ? (
-                                              <div className="flex items-center justify-center gap-1">
-                                                <button onClick={() => decrementFutsalStat(player.id, 'shots_received')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                                <span className="text-xs w-6 text-center text-gray-900">{stats.shots_received || 0}</span>
-                                                <button onClick={() => incrementFutsalStat(player.id, 'shots_received')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                              <div className="flex items-center justify-center gap-0.5">
+                                                <button onClick={() => decrementFutsalStat(player.id, 'shots_received')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                                <span className="text-[10px] w-5 text-center text-gray-900">{stats.shots_received || 0}</span>
+                                                <button onClick={() => incrementFutsalStat(player.id, 'shots_received')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                               </div>
                                             ) : (
-                                              <span className="text-xs text-gray-400 flex justify-center">-</span>
+                                              <span className="text-[10px] text-gray-400 flex justify-center">-</span>
                                             )}
                                           </td>
                                           
                                           {/* Saves (Goalkeeper) */}
-                                          <td className="border px-1 py-1 bg-orange-50">
+                                          <td className="border px-0.5 py-0.5 bg-orange-50">
                                             {stats.is_goalkeeper ? (
-                                              <div className="flex items-center justify-center gap-1">
-                                                <button onClick={() => decrementFutsalStat(player.id, 'saves')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                                <span className="text-xs w-6 text-center text-gray-900">{stats.saves || 0}</span>
-                                                <button onClick={() => incrementFutsalStat(player.id, 'saves')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                              <div className="flex items-center justify-center gap-0.5">
+                                                <button onClick={() => decrementFutsalStat(player.id, 'saves')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                                <span className="text-[10px] w-5 text-center text-gray-900">{stats.saves || 0}</span>
+                                                <button onClick={() => incrementFutsalStat(player.id, 'saves')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                               </div>
                                             ) : (
-                                              <span className="text-xs text-gray-400 flex justify-center">-</span>
+                                              <span className="text-[10px] text-gray-400 flex justify-center">-</span>
                                             )}
                                             
                                           </td>
                                           {/* KOLOM CHECKBOX Is GK */}
-                                          <td className="border bg-orange-50 px-1 py-1 text-center">
+                                          <td className="border bg-orange-50 px-0.5 py-0.5 text-center">
                                             <input
                                               type="checkbox"
                                               checked={!!stats.is_goalkeeper}
@@ -3273,7 +3453,7 @@ export default function AdminPanel() {
                                   {/* Team 2 Players */}
                                   <tr>
                                     <td 
-                                      colSpan={11} 
+                                      colSpan={15} 
                                       className={`border px-2 py-1 text-sm font-semibold text-white ${getFacultyColorClasses(match.faculty2Id).split(' ')[0]}`}
                                     >
                                       {faculties.find(f => f.id === match.faculty2Id)?.name || 'Team 2'} ({futsalTeam2Players.length} players)
@@ -3281,7 +3461,7 @@ export default function AdminPanel() {
                                   </tr>
                                   {futsalTeam2Players.length === 0 ? (
                                     <tr>
-                                      <td colSpan={10} className="border px-2 py-2 text-xs text-gray-500 text-center">
+                                      <td colSpan={15} className="border px-1 py-1 text-[10px] text-gray-500 text-center">
                                         No players found for this faculty
                                       </td>
                                     </tr>
@@ -3291,97 +3471,133 @@ export default function AdminPanel() {
                                       
                                       return (
                                         <tr key={player.id} className="hover:bg-green-50">
-                                          <td className="border px-2 py-2 text-xs text-gray-900">
+                                          <td className="border px-1 py-0.5 text-[10px] text-gray-900">
                                             <div className="font-medium">{player.name}</div>
                                             <div className="text-gray-600">#{player.jersey_number}</div>
                                           </td>
                                           
                                           {/* Shots On Target */}
-                                          <td className="border px-1 py-1 bg-yellow-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementFutsalStat(player.id, 'shots_on_target')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.shots_on_target || 0}</span>
-                                              <button onClick={() => incrementFutsalStat(player.id, 'shots_on_target')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-yellow-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'shots_on_target')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.shots_on_target || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'shots_on_target')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* Shots Off Target */}
-                                          <td className="border px-1 py-1 bg-yellow-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementFutsalStat(player.id, 'shots_off_target')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.shots_off_target || 0}</span>
-                                              <button onClick={() => incrementFutsalStat(player.id, 'shots_off_target')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-yellow-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'shots_off_target')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.shots_off_target || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'shots_off_target')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* Goals */}
-                                          <td className="border px-1 py-1 bg-green-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementFutsalStat(player.id, 'goals')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.goals || 0}</span>
-                                              <button onClick={() => incrementFutsalStat(player.id, 'goals')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-green-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'goals')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.goals || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'goals')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* Assists */}
-                                          <td className="border px-1 py-1 bg-blue-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementFutsalStat(player.id, 'assists')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.assists || 0}</span>
-                                              <button onClick={() => incrementFutsalStat(player.id, 'assists')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-blue-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'assists')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.assists || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'assists')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* Clearances */}
-                                          <td className="border px-1 py-1 bg-purple-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementFutsalStat(player.id, 'clearances')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.clearances || 0}</span>
-                                              <button onClick={() => incrementFutsalStat(player.id, 'clearances')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-purple-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'clearances')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.clearances || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'clearances')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* Fouls */}
-                                          <td className="border px-1 py-1 bg-pink-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementFutsalStat(player.id, 'fouls')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.fouls || 0}</span>
-                                              <button onClick={() => incrementFutsalStat(player.id, 'fouls')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-pink-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'fouls')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.fouls || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'fouls')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
+                                            </div>
+                                          </td>
+
+                                          {/* Passing */}
+                                          <td className="border px-0.5 py-0.5 bg-orange-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'passing')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.passing || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'passing')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
+                                            </div>
+                                          </td>
+
+                                          {/* Dribble Attempts */}
+                                          <td className="border px-0.5 py-0.5 bg-blue-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'dribble')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.dribble || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'dribble')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
+                                            </div>
+                                          </td>
+
+                                          {/* Dribble Success */}
+                                          <td className="border px-0.5 py-0.5 bg-blue-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'dribble_success')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.dribble_success || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'dribble_success')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
+                                          {/* Intercept */}
+                                          <td className="border px-0.5 py-0.5 bg-indigo-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'intercept')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.intercept || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'intercept')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
+                                            </div>
+                                          </td>
+
                                           {/* Turnovers */}
-                                          <td className="border px-1 py-1 bg-gray-50">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => decrementFutsalStat(player.id, 'turnovers')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                              <span className="text-xs w-6 text-center text-gray-900">{stats.turnovers || 0}</span>
-                                              <button onClick={() => incrementFutsalStat(player.id, 'turnovers')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                          <td className="border px-0.5 py-0.5 bg-gray-50">
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={() => decrementFutsalStat(player.id, 'turnovers')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                              <span className="text-[10px] w-5 text-center text-gray-900">{stats.turnovers || 0}</span>
+                                              <button onClick={() => incrementFutsalStat(player.id, 'turnovers')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                             </div>
                                           </td>
                                           
                                           {/* Shots Received (Goalkeeper) */}
-                                          <td className="border px-1 py-1 bg-orange-50">
+                                          <td className="border px-0.5 py-0.5 bg-orange-50">
                                             {stats.is_goalkeeper ? (
-                                              <div className="flex items-center justify-center gap-1">
-                                                <button onClick={() => decrementFutsalStat(player.id, 'shots_received')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                                <span className="text-xs w-6 text-center text-gray-900">{stats.shots_received || 0}</span>
-                                                <button onClick={() => incrementFutsalStat(player.id, 'shots_received')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                              <div className="flex items-center justify-center gap-0.5">
+                                                <button onClick={() => decrementFutsalStat(player.id, 'shots_received')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                                <span className="text-[10px] w-5 text-center text-gray-900">{stats.shots_received || 0}</span>
+                                                <button onClick={() => incrementFutsalStat(player.id, 'shots_received')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                               </div>
                                             ) : (
-                                              <span className="text-xs text-gray-400 flex justify-center">-</span>
+                                              <span className="text-[10px] text-gray-400 flex justify-center">-</span>
                                             )}
                                           </td>
                                           
                                           {/* Saves (Goalkeeper) */}
                                           <td className="border w-24 px-1 py-1 bg-orange-50">
                                             {stats.is_goalkeeper ? (
-                                              <div className="flex items-center justify-center gap-1">
-                                                <button onClick={() => decrementFutsalStat(player.id, 'saves')} className="bg-red-100 hover:bg-red-200 text-red-700 w-5 h-5 rounded text-xs">-</button>
-                                                <span className="text-xs w-6 text-center text-gray-900">{stats.saves || 0}</span>
-                                                <button onClick={() => incrementFutsalStat(player.id, 'saves')} className="bg-green-100 hover:bg-green-200 text-green-700 w-5 h-5 rounded text-xs">+</button>
+                                              <div className="flex items-center justify-center gap-0.5">
+                                                <button onClick={() => decrementFutsalStat(player.id, 'saves')} className="bg-red-100 hover:bg-red-200 text-red-700 w-4 h-4 rounded text-[9px]">-</button>
+                                                <span className="text-[10px] w-5 text-center text-gray-900">{stats.saves || 0}</span>
+                                                <button onClick={() => incrementFutsalStat(player.id, 'saves')} className="bg-green-100 hover:bg-green-200 text-green-700 w-4 h-4 rounded text-[9px]">+</button>
                                               </div>
                                             ) : (
-                                              <span className="text-xs text-gray-400 flex justify-center">-</span>
+                                              <span className="text-[10px] text-gray-400 flex justify-center">-</span>
                                             )}
                                           </td>
                                           {/* KOLOM CHECKBOX Is GK */}
@@ -3430,33 +3646,26 @@ export default function AdminPanel() {
                             <div className="flex items-center justify-between mb-4">
                               <h4 className="text-lg font-semibold text-gray-900">🏐 Volleyball Set Scores</h4>
                               <div className="flex space-x-1">
-                                {[1, 2, 3, 4, 5].map((setNumber) => (
+                              {(() => {
+                                  const currentMatch = matches.find(m => m.id === expandedVolleyballMatchId);
+                                  return ['Set 1', 'Set 2', 'Set 3', 'Set 4', 'Set 5', 'FT'].map((period) => (
                                   <button
-                                    key={setNumber}
+                                      key={period}
                                     onClick={() => {
-                                      setCurrentSet(setNumber);
-                                      saveCurrentSetToStorage(setNumber);
-                                      
-                                      // Update currentPeriod in database
-                                      if (expandedVolleyballMatchId) {
-                                        const period = `Set ${setNumber}`;
-                                        handlePeriodUpdate(expandedVolleyballMatchId, period);
-                                        console.log('🏐 Updated currentPeriod to:', period);
-                                      }
-                                      
-                                      if (expandedVolleyballMatchId) {
-                                        loadVolleyballSetScores(expandedVolleyballMatchId);
+                                        if (expandedVolleyballMatchId) {
+                                          handlePeriodUpdate(expandedVolleyballMatchId, period);
                                       }
                                     }}
                                     className={`px-3 py-1 text-sm font-medium rounded border transition-colors ${
-                                      currentSet === setNumber
+                                        currentMatch?.currentPeriod === period
                                         ? 'bg-blue-500 text-white border-blue-500'
                                         : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                                     }`}
                                   >
-                                    Set {setNumber}
+                                      {period}
                                   </button>
-                                ))}
+                                  ));
+                                })()}
                               </div>
                             </div>
                             
@@ -3515,6 +3724,40 @@ export default function AdminPanel() {
                               </div>
                             </div>
                             
+                            {/* Volleyball Stats Table */}
+                            <div className="overflow-x-auto mt-6">
+                              <table className="w-full border-collapse bg-white">
+                                <thead>
+                                  <tr className="bg-gray-100">
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900">Player</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-yellow-50" colSpan={3}>Hitting</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-green-50" colSpan={2}>Blocking</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-blue-50" colSpan={2}>Passing</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-purple-50" colSpan={3}>Serving</th>
+                                    <th className="border px-2 py-2 text-xs font-semibold text-gray-900 bg-pink-50" colSpan={2}>Digging</th>
+                                  </tr>
+                                  <tr className="bg-gray-50">
+                                    <th className="border px-1 py-1 text-xs text-gray-600"></th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-yellow-50">Attempts</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-yellow-50">Kills</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-yellow-50">Errors</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-green-50">Success</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-green-50">Errors</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-blue-50">On Target</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-blue-50">Errors</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-purple-50">Attempts</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-purple-50">Aces</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-purple-50">Errors</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-pink-50">Attempts</th>
+                                    <th className="border px-1 py-1 text-xs text-gray-600 bg-pink-50">Success</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {/* Table body akan ditambahkan kemudian */}
+                                </tbody>
+                              </table>
+                            </div>
+                            
                             <div className="flex justify-end gap-2 mt-4">
                               <button
                                 onClick={() => toggleVolleyballExpand(match.id)}
@@ -3536,33 +3779,26 @@ export default function AdminPanel() {
                             <div className="flex items-center justify-between mb-4">
                               <h4 className="text-lg font-semibold text-gray-900">🏸 Badminton Set Scores</h4>
                               <div className="flex space-x-1">
-                                {[1, 2, 3].map((setNumber) => (
+                              {(() => {
+                                  const currentMatch = matches.find(m => m.id === expandedBadmintonMatchId);
+                                  return ['Set 1', 'Set 2', 'Set 3', 'FT'].map((period) => (
                                   <button
-                                    key={setNumber}
+                                    key={period}
                                     onClick={() => {
-                                      setCurrentBadmintonSet(setNumber);
-                                      saveCurrentSetToStorage(setNumber);
-                                      
-                                      // Update currentPeriod in database
-                                      if (expandedBadmintonMatchId) {
-                                        const period = `Set ${setNumber}`;
-                                        handlePeriodUpdate(expandedBadmintonMatchId, period);
-                                        console.log('🏸 Updated currentPeriod to:', period);
-                                      }
-                                      
-                                      if (expandedBadmintonMatchId) {
-                                        loadBadmintonSetScores(expandedBadmintonMatchId);
-                                      }
+                                        if (expandedBadmintonMatchId) {
+                                          handlePeriodUpdate(expandedBadmintonMatchId, period);
+                                        }
                                     }}
                                     className={`px-3 py-1 text-sm font-medium rounded border transition-colors ${
-                                      currentBadmintonSet === setNumber
-                                        ? 'bg-blue-500 text-white border-blue-500'
+                                        currentMatch?.currentPeriod === period
+                                          ? 'bg-blue-500 text-white border-blue-500'
                                         : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                                     }`}
                                   >
-                                    Set {setNumber}
+                                    {period}
                                   </button>
-                                ))}
+                                  ));
+                                })()}
                               </div>
                             </div>
                             

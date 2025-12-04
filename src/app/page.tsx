@@ -837,21 +837,21 @@ export default function Home() {
                           {/* Quarter indicator for basketball matches - positioned above score */}
                           {match.competitionId === 'basketball-putra' || match.competitionId === 'basketball-putri' ? (
                             <div className="text-sm px font-semibold text-gray-600 mb-1">
-                              {match.currentPeriod || 'Q1'}
+                              {match.currentPeriod || 'FT'}
                             </div>
                           ) : null}
                           
                           {/* Volleyball: Period indicator */}
                           {match.competitionId === 'volleyball' && (
                             <div className="text-sm font-semibold text-gray-600 mb-1">
-                              {match.currentPeriod || 'Set 1'}
+                              {match.currentPeriod || 'FT'}
                             </div>
                           )}
                           
                           {/* Badminton: Period indicator */}
                           {(match.competitionId === 'badminton-putra' || match.competitionId === 'badminton-putri' || match.competitionId === 'badminton-mixed') && (
                             <div className="text-sm font-semibold text-gray-600 mb-1">
-                              {match.currentPeriod || 'Set 1'}
+                              {match.currentPeriod || 'FT'}
                             </div>
                           )}
                           

@@ -74,9 +74,8 @@ export default function AdminLayout({
     const handleCustomStorageChange = () => {
       console.log('Custom session change event detected, rechecking auth');
       // Force a small delay to ensure session storage is updated
-      setTimeout(() => {
+      // sessionStorage is synchronous, no delay needed. UPDATED ✅
         checkAuth();
-      }, 100);
     };
 
     if (typeof window !== 'undefined') {

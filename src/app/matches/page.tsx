@@ -552,17 +552,17 @@ export default function MatchesPage() {
                               <div className="text-center">
                                 {/* Basketball: show quarter */}
                                 {(match.competitionId === 'basketball-putra' || match.competitionId === 'basketball-putri') && (
-                                  <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'Q1'}</div>
+                                  <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'FT'}</div>
                                 )}
 
                                 {/* Volleyball: period indicator */}
                                 {match.competitionId === 'volleyball' && (
-                                  <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'Set 1'}</div>
+                                  <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'FT'}</div>
                                 )}
 
                                 {/* Badminton: period indicator */}
                                 {(match.competitionId === 'badminton-putra' || match.competitionId === 'badminton-putri' || match.competitionId === 'badminton-mixed') && (
-                                  <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'Set 1'}</div>
+                                  <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'FT'}</div>
                                 )}
 
                                 {/* Futsal: period indicator */}

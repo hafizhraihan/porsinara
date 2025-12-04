@@ -74,9 +74,8 @@ export default function AdminLayout({
     const handleCustomStorageChange = () => {
       console.log('Custom session change event detected, rechecking auth');
       // Force a small delay to ensure session storage is updated
-      setTimeout(() => {
+      // sessionStorage is synchronous, no delay needed. UPDATED ✅
         checkAuth();
-      }, 100);
     };
 
     if (typeof window !== 'undefined') {
@@ -149,14 +148,17 @@ export default function AdminLayout({
   };
 
   // Show loading while checking authentication
-  if (isAuthenticated === null) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Checking authentication...</p>
-        </div>
+  // Show loading while checking authentication OR while adminUser is null
+  if (isAuthenticated === null || (isAuthenticated === true && !adminUser)) {
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
+        <p className="text-gray-600">
+          {isAuthenticated === null ? 'Checking authentication...' : 'Loading user data...'}
+        </p>
       </div>
+    </div>
     );
   }
 

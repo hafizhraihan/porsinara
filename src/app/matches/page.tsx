@@ -44,6 +44,19 @@ interface Match {
   time: string;
   location: string;
   round?: string;
+  // Extra fields to mirror homepage display
+  currentPeriod?: string;
+  // Volleyball/Badminton set scores (and used for futsal penalties display)
+  set1Score1?: number | null;
+  set1Score2?: number | null;
+  set2Score1?: number | null;
+  set2Score2?: number | null;
+  set3Score1?: number | null;
+  set3Score2?: number | null;
+  set4Score1?: number | null;
+  set4Score2?: number | null;
+  set5Score1?: number | null;
+  set5Score2?: number | null;
   competition?: {
     id: string;
     name: string;
@@ -136,6 +149,18 @@ export default function MatchesPage() {
             time: match.time,
             location: match.location,
             round: match.round,
+            currentPeriod: match.current_period,
+            // set scores (volleyball/badminton) and used for futsal penalties
+            set1Score1: match.set1_score1,
+            set1Score2: match.set1_score2,
+            set2Score1: match.set2_score1,
+            set2Score2: match.set2_score2,
+            set3Score1: match.set3_score1,
+            set3Score2: match.set3_score2,
+            set4Score1: match.set4_score1,
+            set4Score2: match.set4_score2,
+            set5Score1: match.set5_score1,
+            set5Score2: match.set5_score2,
             competition: {
               id: match.competition_id,
               name: match.competition?.name || 'Unknown Competition',
@@ -225,6 +250,17 @@ export default function MatchesPage() {
             time: match.time,
             location: match.location,
             round: match.round,
+            currentPeriod: match.current_period,
+            set1Score1: match.set1_score1,
+            set1Score2: match.set1_score2,
+            set2Score1: match.set2_score1,
+            set2Score2: match.set2_score2,
+            set3Score1: match.set3_score1,
+            set3Score2: match.set3_score2,
+            set4Score1: match.set4_score1,
+            set4Score2: match.set4_score2,
+            set5Score1: match.set5_score1,
+            set5Score2: match.set5_score2,
             competition: {
               id: match.competition_id,
               name: match.competition?.name || 'Unknown Competition',
@@ -514,9 +550,73 @@ export default function MatchesPage() {
                                 <span className="text-xs sm:text-base font-medium text-gray-900">{match.faculty1.shortName}</span>
                               </div>
                               <div className="text-center">
+                                {/* Basketball: show quarter */}
+                                {(match.competitionId === 'basketball-putra' || match.competitionId === 'basketball-putri') && (
+                                  <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'FT'}</div>
+                                )}
+
+                                {/* Volleyball: period indicator */}
+                                {match.competitionId === 'volleyball' && (
+                                  <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'FT'}</div>
+                                )}
+
+                                {/* Badminton: period indicator */}
+                                {(match.competitionId === 'badminton-putra' || match.competitionId === 'badminton-putri' || match.competitionId === 'badminton-mixed') && (
+                                  <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || 'FT'}</div>
+                                )}
+
+                                {/* Futsal: period indicator */}
+                                {match.competitionId === 'futsal' && (
+                                  <div className="text-sm font-semibold text-gray-600 mb-1">{match.currentPeriod || '1st Half'}</div>
+                                )}
+
+                                {/* Main score display for all matches */}
                                 <div className="text-base sm:text-2xl font-bold text-gray-900">
                                   {match.score1} - {match.score2}
                                 </div>
+                                
+                                {/* Volleyball: set scores below main score */}
+                                {match.competitionId === 'volleyball' && (
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    {(() => {
+                                      const setScores: string[] = [];
+                                      if (match.set1Score1 != null && match.set1Score2 != null) setScores.push(`${match.set1Score1}-${match.set1Score2}`);
+                                      if (match.set2Score1 != null && match.set2Score2 != null) setScores.push(`${match.set2Score1}-${match.set2Score2}`);
+                                      if (match.set3Score1 != null && match.set3Score2 != null) setScores.push(`${match.set3Score1}-${match.set3Score2}`);
+                                      if (match.set4Score1 != null && match.set4Score2 != null) setScores.push(`${match.set4Score1}-${match.set4Score2}`);
+                                      if (match.set5Score1 != null && match.set5Score2 != null) setScores.push(`${match.set5Score1}-${match.set5Score2}`);
+                                      return setScores.length > 0 ? setScores.join(' | ') : '0-0';
+                                    })()}
+                                  </div>
+                                )}
+
+                                {/* Badminton: set scores below main score */}
+                                {(match.competitionId === 'badminton-putra' || match.competitionId === 'badminton-putri' || match.competitionId === 'badminton-mixed') && (
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    {(() => {
+                                      const setScores: string[] = [];
+                                      if (match.set1Score1 != null && match.set1Score2 != null) setScores.push(`${match.set1Score1}-${match.set1Score2}`);
+                                      if (match.set2Score1 != null && match.set2Score2 != null) setScores.push(`${match.set2Score1}-${match.set2Score2}`);
+                                      if (match.set3Score1 != null && match.set3Score2 != null) setScores.push(`${match.set3Score1}-${match.set3Score2}`);
+                                      return setScores.length > 0 ? setScores.join(' | ') : '0-0';
+                                    })()}
+                                  </div>
+                                )}
+
+                                {/* Futsal: penalty scores below main score */}
+                                {match.competitionId === 'futsal' && (() => {
+                                  const penalty1 = match.set1Score1 || 0;
+                                  const penalty2 = match.set1Score2 || 0;
+                                  const hasPenaltyScores = penalty1 > 0 || penalty2 > 0;
+                                  const showPenalty = match.currentPeriod === 'PEN' || (match.status === 'completed' && hasPenaltyScores);
+                                  
+                                  return showPenalty ? (
+                                    <div className="text-xs text-gray-600 font-semibold mt-1">
+                                      Penalty: {penalty1} - {penalty2}
+                                    </div>
+                                  ) : null;
+                                })()}
+
                                 {match.status === 'completed' && (
                                   <div className="text-xs font-semibold text-black mt-1 flex items-center justify-center space-x-1">
                                     <div className={`w-3 h-3 rounded-full ${getFacultyColorClasses(match.score1 > match.score2 ? match.faculty1.id : match.faculty2.id).split(' ')[0]}`}></div>
@@ -526,9 +626,7 @@ export default function MatchesPage() {
                                 {match.status === 'ongoing' && (
                                   <div className="mt-2">
                                     <div className="w-16 h-1 bg-gray-200 rounded-full mx-auto overflow-hidden">
-                                      <div className="w-4 h-1 bg-red-500 rounded-full" style={{
-                                        animation: 'moveRight 2s linear infinite'
-                                      }}></div>
+                                      <div className="w-4 h-1 bg-red-500 rounded-full" style={{ animation: 'moveRight 2s linear infinite' }}></div>
                                     </div>
                                   </div>
                                 )}
